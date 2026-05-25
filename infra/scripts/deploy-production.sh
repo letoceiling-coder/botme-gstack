@@ -7,7 +7,7 @@ SERVER="${DEPLOY_SERVER:-root@212.67.9.173}"
 REMOTE="${DEPLOY_REMOTE:-/var/www/agent.neeklo.ru}"
 SSH_KEY="${DEPLOY_SSH_KEY:-$HOME/.ssh/id_ed25519_beget}"
 RSYNC_SSH="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=accept-new"
-RELEASE_VERSION="${RELEASE_VERSION:-M11.8}"
+RELEASE_VERSION="${RELEASE_VERSION:-M11.8C}"
 
 cd "$ROOT"
 chmod +x infra/scripts/*.sh 2>/dev/null || true
@@ -51,6 +51,8 @@ rsync -avz -e "$RSYNC_SSH" \
   apps/widget/dist/ "${SERVER}:${REMOTE}/apps/widget/dist/"
 rsync -avz -e "$RSYNC_SSH" \
   apps/operator-panel/dist/ "${SERVER}:${REMOTE}/apps/operator-panel/dist/"
+rsync -avz -e "$RSYNC_SSH" \
+  operator-runtime/ "${SERVER}:${REMOTE}/operator-runtime/"
 
 echo "==> Rsync workspace package dist"
 ssh -i "$SSH_KEY" "$SERVER" "mkdir -p ${REMOTE}/packages/{ai-core,ai-runtime,realtime-runtime,rtc-runtime,shared,database,crypto}/dist"

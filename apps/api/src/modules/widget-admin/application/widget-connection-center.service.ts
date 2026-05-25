@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { OperatorConnectionCenterDto, WidgetConnectionCenterDto } from '@botme/shared';
+import type { OperatorConnectionCenterDto, OperatorProvisionResultDto, WidgetConnectionCenterDto } from '@botme/shared';
 import { WidgetAdminRepository, toWidgetDetailDto } from '../infrastructure/widget-admin.repository';
 import { WidgetConnectionHealthService } from './widget-connection-health.service';
 import { OperatorRuntimeTokenService } from './operator-runtime-token.service';
+import { OperatorEmbedValidationService } from './operator-embed-validation.service';
 
 @Injectable()
 export class WidgetConnectionCenterService {
@@ -11,13 +12,68 @@ export class WidgetConnectionCenterService {
     private readonly widgets: WidgetAdminRepository,
     private readonly health: WidgetConnectionHealthService,
     private readonly runtimeTokens: OperatorRuntimeTokenService,
+    private readonly embedValidation: OperatorEmbedValidationService,
     private readonly config: ConfigService,
   ) {}
 
-  async getConnectionCenter(workspaceId: string, widgetId: string): Promise<WidgetConnectionCenterDto> {
+  async getConnectionCenter(
+    workspaceId: string,
+    widgetId: string,
+    userId: string,
+  ): Promise<WidgetConnectionCenterDto> {
     const row = await this.widgets.findById(workspaceId, widgetId);
     if (!row) throw new NotFoundException('Виджет не найден');
 
+    const domains = row.domains.map((d) => d.domain);
+    const { plainToken, dto: activeToken } = await this.runtimeTokens.ensureDefaultToken(
+      workspaceId,
+      widgetId,
+      userId,
+      domains,
+    );
+
+    return this.buildCenter(workspaceId, widgetId, userId, row, plainToken, activeToken);
+  }
+
+  async provisionOperatorConnection(
+    workspaceId: string,
+    widgetId: string,
+    userId: string,
+  ): Promise<OperatorProvisionResultDto> {
+    const row = await this.widgets.findById(workspaceId, widgetId);
+    if (!row) throw new NotFoundException('Виджет не найден');
+
+    const domains = row.domains.map((d) => d.domain);
+    const { plainToken, dto: activeToken } = await this.runtimeTokens.regenerate(
+      workspaceId,
+      widgetId,
+      userId,
+    );
+
+    const center = await this.buildCenter(workspaceId, widgetId, userId, row, plainToken, activeToken);
+    return { ok: true, operatorEmbed: center.operatorEmbed };
+  }
+
+  async getOperatorValidation(workspaceId: string, widgetId: string) {
+    const row = await this.widgets.findById(workspaceId, widgetId);
+    if (!row) throw new NotFoundException('Виджет не найден');
+    const rtcEnabled = this.config.get<string>('FEATURE_RTC_CALLS') === 'true';
+    return this.embedValidation.validate(
+      workspaceId,
+      widgetId,
+      rtcEnabled,
+      row.domains.map((d) => d.domain),
+    );
+  }
+
+  private async buildCenter(
+    workspaceId: string,
+    widgetId: string,
+    userId: string,
+    row: NonNullable<Awaited<ReturnType<WidgetAdminRepository['findById']>>>,
+    plainToken: string,
+    activeToken: import('@botme/shared').OperatorRuntimeTokenDto,
+  ): Promise<WidgetConnectionCenterDto> {
     const embedOrigin = this.config.get<string>('WEB_URL', 'https://agent.neeklo.ru').replace(/\/$/, '');
     const demoOrigin = this.config.get<string>('DEMO_URL', 'https://demo.neeklo.ru').replace(/\/$/, '');
     const turnHost = this.config.get<string>('TURN_HOST', 'turn.neeklo.ru');
@@ -25,16 +81,11 @@ export class WidgetConnectionCenterService {
     const detail = toWidgetDetailDto(row, embedOrigin);
     const workspace = await this.widgets.getWorkspace(workspaceId);
     const health = await this.health.check(workspaceId, widgetId, row.assistantId);
-    const activeToken = await this.runtimeTokens.getActiveForWidget(workspaceId, widgetId);
-    const tokenPlaceholder = activeToken ? `${activeToken.tokenPrefix}…` : 'YOUR_OPERATOR_TOKEN';
-    const operatorEmbed = this.buildOperatorEmbed(
-      embedOrigin,
-      demoOrigin,
-      workspaceId,
-      row.domains.map((d) => d.domain),
-      tokenPlaceholder,
-      activeToken,
-    );
+    const rtcEnabled = this.config.get<string>('FEATURE_RTC_CALLS') === 'true';
+    const domains = row.domains.map((d) => d.domain);
+
+    const validation = await this.embedValidation.validate(workspaceId, widgetId, rtcEnabled, domains);
+    const operatorEmbed = this.buildOperatorEmbed(embedOrigin, workspaceId, domains, plainToken, activeToken, validation);
 
     return {
       access: {
@@ -46,8 +97,8 @@ export class WidgetConnectionCenterService {
         assistantId: row.assistantId,
         assistantName: row.assistant.name,
         isActive: row.isActive,
-        rtcEnabled: this.config.get<string>('FEATURE_RTC_CALLS') === 'true',
-        domains: row.domains.map((d) => d.domain),
+        rtcEnabled,
+        domains,
       },
       operatorUrls: {
         adminOperatorUrl: `${embedOrigin}/admin/operator`,
@@ -55,7 +106,7 @@ export class WidgetConnectionCenterService {
         operatorEmbedPath: '/operator-panel/',
         operatorJsUrl: `${embedOrigin}/operator.js`,
         operatorRuntimeUrl: `${embedOrigin}/operator-runtime/`,
-        standaloneOperatorUrl: `${embedOrigin}/operator-runtime/?workspace=${workspaceId}&token=${tokenPlaceholder}`,
+        standaloneOperatorUrl: operatorEmbed.standaloneUrl,
         websocketUrl: `${wsOrigin}/socket.io`,
         widgetJsUrl: `${embedOrigin}/widget.js`,
       },
@@ -63,7 +114,7 @@ export class WidgetConnectionCenterService {
       selfHost: {
         widgetJsUrl: `${embedOrigin}/widget.js`,
         operatorJsUrl: `${embedOrigin}/operator.js`,
-        operatorRuntimePackagePath: '/operator-runtime/',
+        operatorRuntimePackagePath: '/api/widgets/' + widgetId + '/operator-self-host.zip',
         websocketUrl: `${wsOrigin}/socket.io`,
         rtcSignalingPath: '/socket.io (namespaces: /widget, /operator)',
         turnHost,
@@ -97,33 +148,31 @@ location /operator-runtime/ {
       health,
       embedCode: detail.embedCode,
       installSteps: [
-        'Скопируйте embed-код виджета и вставьте перед </body> на вашем сайте.',
-        `Добавьте домен сайта в список разрешённых: ${detail.domains.join(', ') || 'не заданы'}.`,
-        'Сгенерируйте operator runtime token в разделе «Подключение кабинета оператора».',
-        'Вставьте operator.js или iframe на страницу операторов.',
-        'Убедитесь, что WebSocket доступен (HTTPS обязателен).',
-        'Для видеозвонков разрешите камеру и микрофон в браузере.',
+        'Скопируйте embed-код виджета — он уже готов, вставьте перед </body>.',
+        'Скопируйте embed-код оператора из вкладки «Кабинет оператора» — тоже готов к вставке.',
+        `Разрешённые домены: ${domains.join(', ') || 'не заданы'}.`,
+        'Готово — операторы могут работать без дополнительной настройки.',
       ],
     };
   }
 
   private buildOperatorEmbed(
     embedOrigin: string,
-    demoOrigin: string,
     workspaceId: string,
     widgetDomains: string[],
-    tokenPlaceholder: string,
-    activeToken: import('@botme/shared').OperatorRuntimeTokenDto | null,
+    plainToken: string,
+    activeToken: import('@botme/shared').OperatorRuntimeTokenDto,
+    validation: import('@botme/shared').OperatorEmbedValidationDto,
   ): OperatorConnectionCenterDto {
     const operatorJsUrl = `${embedOrigin}/operator.js`;
     const runtimeBase = `${embedOrigin}/operator-runtime/`;
-    const standaloneUrl = `${runtimeBase}?workspace=${encodeURIComponent(workspaceId)}&token=${encodeURIComponent(tokenPlaceholder)}`;
-    const runtimeUrl = `${runtimeBase}?token=${encodeURIComponent(tokenPlaceholder)}`;
+    const standaloneUrl = `${runtimeBase}?workspace=${encodeURIComponent(workspaceId)}&token=${encodeURIComponent(plainToken)}`;
+    const runtimeUrl = `${runtimeBase}?token=${encodeURIComponent(plainToken)}&workspace=${encodeURIComponent(workspaceId)}&theme=dark`;
 
     const scriptEmbedCode = `<script
   src="${operatorJsUrl}"
   data-workspace="${workspaceId}"
-  data-operator-token="${tokenPlaceholder}"
+  data-operator-token="${plainToken}"
   data-theme="dark"
   data-position="fullscreen"
 ></script>`;
@@ -136,39 +185,59 @@ location /operator-runtime/ {
 ></iframe>`;
 
     const integrations = [
-      { id: 'html-script', label: 'HTML — script embed', language: 'html', code: scriptEmbedCode },
-      { id: 'html-iframe', label: 'HTML — iframe', language: 'html', code: iframeEmbedCode },
+      {
+        id: 'html-script',
+        label: 'HTML — script',
+        language: 'html',
+        difficulty: 'easy' as const,
+        setupMinutes: 1,
+        code: scriptEmbedCode,
+      },
+      {
+        id: 'html-iframe',
+        label: 'HTML — iframe',
+        language: 'html',
+        difficulty: 'easy' as const,
+        setupMinutes: 1,
+        code: iframeEmbedCode,
+      },
       {
         id: 'react',
         label: 'React',
         language: 'tsx',
+        difficulty: 'medium' as const,
+        setupMinutes: 2,
         code: `useEffect(() => {
-  const s = document.createElement('script');
-  s.src = '${operatorJsUrl}';
-  s.dataset.workspace = '${workspaceId}';
-  s.dataset.operatorToken = '${tokenPlaceholder}';
-  s.dataset.theme = 'dark';
-  s.dataset.position = 'fullscreen';
-  document.body.appendChild(s);
-  return () => { s.remove(); };
+  const script = document.createElement('script');
+  script.src = '${operatorJsUrl}';
+  script.dataset.workspace = '${workspaceId}';
+  script.dataset.operatorToken = '${plainToken}';
+  script.dataset.theme = 'dark';
+  script.dataset.position = 'fullscreen';
+  document.body.appendChild(script);
+  return () => {
+    document.body.removeChild(script);
+  };
 }, []);`,
       },
       {
         id: 'vue',
         label: 'Vue 3',
         language: 'vue',
+        difficulty: 'medium' as const,
+        setupMinutes: 2,
         code: `<script setup>
 import { onMounted, onUnmounted } from 'vue';
 
 onMounted(() => {
-  const s = document.createElement('script');
-  s.src = '${operatorJsUrl}';
-  s.dataset.workspace = '${workspaceId}';
-  s.dataset.operatorToken = '${tokenPlaceholder}';
-  s.dataset.theme = 'dark';
-  s.dataset.position = 'fullscreen';
-  document.body.appendChild(s);
-  onUnmounted(() => s.remove());
+  const script = document.createElement('script');
+  script.src = '${operatorJsUrl}';
+  script.dataset.workspace = '${workspaceId}';
+  script.dataset.operatorToken = '${plainToken}';
+  script.dataset.theme = 'dark';
+  script.dataset.position = 'fullscreen';
+  document.body.appendChild(script);
+  onUnmounted(() => script.remove());
 });
 <\/script>`,
       },
@@ -176,12 +245,14 @@ onMounted(() => {
         id: 'nuxt',
         label: 'Nuxt 3',
         language: 'vue',
+        difficulty: 'medium' as const,
+        setupMinutes: 3,
         code: `<script setup lang="ts">
 useHead({
   script: [{
     src: '${operatorJsUrl}',
     'data-workspace': '${workspaceId}',
-    'data-operator-token': '${tokenPlaceholder}',
+    'data-operator-token': '${plainToken}',
     'data-theme': 'dark',
     'data-position': 'fullscreen',
   }],
@@ -192,6 +263,8 @@ useHead({
         id: 'next',
         label: 'Next.js',
         language: 'tsx',
+        difficulty: 'medium' as const,
+        setupMinutes: 3,
         code: `import Script from 'next/script';
 
 export default function OperatorPage() {
@@ -199,7 +272,7 @@ export default function OperatorPage() {
     <Script
       src="${operatorJsUrl}"
       data-workspace="${workspaceId}"
-      data-operator-token="${tokenPlaceholder}"
+      data-operator-token="${plainToken}"
       data-theme="dark"
       data-position="fullscreen"
       strategy="afterInteractive"
@@ -217,9 +290,9 @@ export default function OperatorPage() {
       scriptEmbedCode,
       integrations,
       activeToken,
-      allowedDomains: activeToken?.allowedDomains.length
-        ? activeToken.allowedDomains
-        : widgetDomains,
+      allowedDomains: activeToken.allowedDomains.length ? activeToken.allowedDomains : widgetDomains,
+      connectionReady: validation.tokenValid && validation.operatorJsReachable,
+      validation,
     };
   }
 }

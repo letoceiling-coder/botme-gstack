@@ -47,6 +47,12 @@ import { OperatorChatService } from './services/operator-chat.service';
     ChatRealtimeBroadcastService,
     OperatorChatService,
   ],
-  exports: [RealtimeRuntimeService, LiveVisitorTrackerService, WebRtcSignalService, ActiveCallRegistryService],
+  exports: [
+    RealtimeRuntimeService,
+    LiveVisitorTrackerService,
+    WebRtcSignalService,
+    ActiveCallRegistryService,
+    OperatorSocketBridge,
+  ],
 })
 export class RealtimeModule {}

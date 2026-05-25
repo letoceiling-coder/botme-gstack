@@ -1,5 +1,6 @@
 import { Body, Controller, Headers, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../../core/decorators/public.decorator';
 import { ExchangeOperatorRuntimeSessionSchema } from '@botme/shared';
 import { OperatorRuntimeTokenService } from '../application/operator-runtime-token.service';
@@ -9,6 +10,7 @@ export class OperatorRuntimePublicController {
   constructor(private readonly tokens: OperatorRuntimeTokenService) {}
 
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('session')
   async session(
     @Body() body: unknown,

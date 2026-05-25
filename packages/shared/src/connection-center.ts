@@ -65,15 +65,35 @@ export interface OperatorRuntimeTokenDto {
   expiresAt: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
+  exchangeCount: number;
+  isDefault: boolean;
   createdAt: string;
-  /** Returned only once on create */
+  /** Returned only once on create/regenerate — never stored in list responses */
   plainToken?: string;
+}
+
+export type OperatorEmbedConnectionStatus = 'connected' | 'partial' | 'offline';
+
+export interface OperatorEmbedValidationDto {
+  status: OperatorEmbedConnectionStatus;
+  operatorJsReachable: boolean;
+  tokenValid: boolean;
+  websocketReady: boolean;
+  rtcAvailable: boolean;
+  operatorsOnline: number;
+  tokenExpiresAt: string | null;
+  tokenLastUsedAt: string | null;
+  tokenExchangeCount: number;
+  domainsConfigured: boolean;
+  checkedAt: string;
 }
 
 export interface OperatorEmbedIntegrationDto {
   id: string;
   label: string;
   language: string;
+  difficulty: 'easy' | 'medium';
+  setupMinutes: number;
   code: string;
 }
 
@@ -86,6 +106,13 @@ export interface OperatorConnectionCenterDto {
   integrations: OperatorEmbedIntegrationDto[];
   activeToken: OperatorRuntimeTokenDto | null;
   allowedDomains: string[];
+  connectionReady: boolean;
+  validation: OperatorEmbedValidationDto;
+}
+
+export interface OperatorProvisionResultDto {
+  ok: boolean;
+  operatorEmbed: OperatorConnectionCenterDto;
 }
 
 export interface WidgetConnectionCenterDto {

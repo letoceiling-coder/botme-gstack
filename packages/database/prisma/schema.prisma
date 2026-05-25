@@ -736,6 +736,10 @@ model OperatorRuntimeToken {
   name           String
   tokenHash      String    @unique
   tokenPrefix    String
+  tokenEncrypted Bytes?
+  keyVersion     Int       @default(1)
+  exchangeCount  Int       @default(0)
+  isDefault      Boolean   @default(false)
   allowedDomains String[]  @default([])
   expiresAt      DateTime?
   revokedAt      DateTime?

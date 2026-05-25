@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, KeyRound, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, Loader2, RefreshCw, Shield, Zap } from 'lucide-react';
 import { useState } from 'react';
-import type { OperatorConnectionCenterDto, OperatorRuntimeTokenDto, WidgetConnectionCenterDto } from '@botme/shared';
-import { Badge, Button, Card, Input } from '@botme/ui';
+import type { OperatorEmbedConnectionStatus, WidgetConnectionCenterDto } from '@botme/shared';
+import { Badge, Button, Card } from '@botme/ui';
 import { api, ApiError } from '@/lib/api';
 import { CopyCard } from './copy-card';
-import { HealthStatusChip } from './health-status-chip';
 
 type IntegrationTab = 'script' | 'iframe' | 'react' | 'vue' | 'nuxt' | 'next';
 
@@ -15,180 +14,201 @@ interface WidgetOperatorEmbedPanelProps {
   canMutate: boolean;
 }
 
+const STATUS_LABEL: Record<OperatorEmbedConnectionStatus, string> = {
+  connected: 'Подключено',
+  partial: 'Частичное подключение',
+  offline: 'Runtime offline',
+};
+
+const STATUS_COLOR: Record<OperatorEmbedConnectionStatus, string> = {
+  connected: 'text-emerald-400',
+  partial: 'text-amber-400',
+  offline: 'text-red-400',
+};
+
 export function WidgetOperatorEmbedPanel({ widgetId, center, canMutate }: WidgetOperatorEmbedPanelProps) {
   const embed = center.operatorEmbed;
   const queryClient = useQueryClient();
   const [integrationTab, setIntegrationTab] = useState<IntegrationTab>('script');
-  const [newTokenName, setNewTokenName] = useState('Production operator');
-  const [plainToken, setPlainToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
-  const tokensQuery = useQuery({
-    queryKey: ['widgets', widgetId, 'operator-tokens'],
-    queryFn: () => api.widgets.listOperatorTokens(widgetId),
+  const validationQuery = useQuery({
+    queryKey: ['widgets', widgetId, 'operator-validation'],
+    queryFn: () => api.widgets.operatorEmbedValidation(widgetId),
+    refetchInterval: 15_000,
+    initialData: embed.validation,
   });
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      api.widgets.createOperatorToken(widgetId, {
-        name: newTokenName,
-        allowedDomains: center.access.domains,
-      }),
-    onSuccess: (data) => {
-      setPlainToken(data.plainToken ?? null);
+  const provisionMutation = useMutation({
+    mutationFn: () => api.widgets.provisionOperatorConnection(widgetId),
+    onSuccess: () => {
       setError(null);
-      void queryClient.invalidateQueries({ queryKey: ['widgets', widgetId, 'operator-tokens'] });
       void queryClient.invalidateQueries({ queryKey: ['widgets', widgetId, 'connection-center'] });
+      void queryClient.invalidateQueries({ queryKey: ['widgets', widgetId, 'operator-validation'] });
     },
     onError: (err: unknown) => setError(err instanceof ApiError ? err.message : 'Ошибка'),
   });
 
-  const revokeMutation = useMutation({
-    mutationFn: (tokenId: string) => api.widgets.revokeOperatorToken(widgetId, tokenId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['widgets', widgetId, 'operator-tokens'] });
-      void queryClient.invalidateQueries({ queryKey: ['widgets', widgetId, 'connection-center'] });
-    },
-  });
-
-  const integrationMap: Record<IntegrationTab, string> = {
-    script: embed.scriptEmbedCode,
-    iframe: embed.iframeEmbedCode,
-    react: embed.integrations.find((i) => i.id === 'react')?.code ?? '',
-    vue: embed.integrations.find((i) => i.id === 'vue')?.code ?? '',
-    nuxt: embed.integrations.find((i) => i.id === 'nuxt')?.code ?? '',
-    next: embed.integrations.find((i) => i.id === 'next')?.code ?? '',
-  };
-
-  const integrationTabs: { id: IntegrationTab; label: string }[] = [
-    { id: 'script', label: 'Script' },
-    { id: 'iframe', label: 'iframe' },
-    { id: 'react', label: 'React' },
-    { id: 'vue', label: 'Vue' },
-    { id: 'nuxt', label: 'Nuxt' },
-    { id: 'next', label: 'Next' },
+  const validation = validationQuery.data ?? embed.validation;
+  const integrationTabs: { id: IntegrationTab; label: string; difficulty: string; minutes: number }[] = [
+    { id: 'script', label: 'Script', difficulty: 'Легко', minutes: 1 },
+    { id: 'iframe', label: 'iframe', difficulty: 'Легко', minutes: 1 },
+    { id: 'react', label: 'React', difficulty: 'Средне', minutes: 2 },
+    { id: 'vue', label: 'Vue', difficulty: 'Средне', minutes: 2 },
+    { id: 'nuxt', label: 'Nuxt', difficulty: 'Средне', minutes: 3 },
+    { id: 'next', label: 'Next', difficulty: 'Средне', minutes: 3 },
   ];
 
-  const displayToken = plainToken ?? embed.activeToken?.tokenPrefix ?? 'YOUR_OPERATOR_TOKEN';
+  const activeIntegration = embed.integrations.find((i) => {
+    const map: Record<IntegrationTab, string> = {
+      script: 'html-script',
+      iframe: 'html-iframe',
+      react: 'react',
+      vue: 'vue',
+      nuxt: 'nuxt',
+      next: 'next',
+    };
+    return i.id === map[integrationTab];
+  });
 
-  const scriptWithToken = embed.scriptEmbedCode.replace(/YOUR_OPERATOR_TOKEN|ort_[\w-]+…/g, displayToken);
-  const iframeWithToken = embed.iframeEmbedCode.replace(/YOUR_OPERATOR_TOKEN|ort_[\w-]+…/g, displayToken);
   const codePreview =
     integrationTab === 'script'
-      ? scriptWithToken
+      ? embed.scriptEmbedCode
       : integrationTab === 'iframe'
-        ? iframeWithToken
-        : integrationMap[integrationTab].replace(/YOUR_OPERATOR_TOKEN|ort_[\w-]+…/g, displayToken);
+        ? embed.iframeEmbedCode
+        : (activeIntegration?.code ?? embed.scriptEmbedCode);
+
+  const currentTab = integrationTabs.find((t) => t.id === integrationTab);
+
+  const downloadZip = async () => {
+    setDownloading(true);
+    setError(null);
+    try {
+      await api.widgets.downloadOperatorSelfHostZip(
+        widgetId,
+        `botme-operator-${center.access.widgetName.replace(/\s+/g, '-').toLowerCase()}.zip`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось скачать архив');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="font-medium">Подключение кабинета оператора</h3>
-            <p className="text-sm text-muted-foreground">
-              Embed operator panel на ваш сайт через script, iframe или фреймворк.
-            </p>
-          </div>
-          <HealthStatusChip status={center.health.overall} />
-        </div>
-        <div className="grid gap-2 text-xs sm:grid-cols-3">
-          <div className="rounded-lg bg-muted/20 p-2">
-            <p className="text-muted-foreground">Operators online</p>
-            <p className="font-semibold">{center.health.operatorSocketsOnline}</p>
-          </div>
-          <div className="rounded-lg bg-muted/20 p-2">
-            <p className="text-muted-foreground">Widget WS</p>
-            <p className="font-semibold">{center.health.widgetSocketsOnline}</p>
-          </div>
-          <div className="rounded-lg bg-muted/20 p-2">
-            <p className="text-muted-foreground">RTC</p>
-            <p className="font-semibold">{center.access.rtcEnabled ? 'ON' : 'OFF'}</p>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="space-y-3 p-4">
-        <div className="flex items-center gap-2">
-          <KeyRound className="h-4 w-4 text-primary" />
-          <h4 className="font-medium">Runtime token</h4>
-        </div>
-        {plainToken && (
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
-            <p className="mb-2 text-xs text-muted-foreground">
-              Сохраните token — он показывается один раз.
-            </p>
-            <CopyCard label="Operator runtime token" value={plainToken} />
-          </div>
-        )}
-        {canMutate && (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              placeholder="Название token"
-              value={newTokenName}
-              onChange={(e) => setNewTokenName(e.target.value)}
-            />
-            <Button
-              disabled={!newTokenName.trim() || createMutation.isPending}
-              onClick={() => createMutation.mutate()}
-            >
-              {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Сгенерировать token
-            </Button>
-          </div>
-        )}
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="space-y-2">
-          {(tokensQuery.data ?? []).map((token: OperatorRuntimeTokenDto) => (
+      {/* Status banner */}
+      <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
             <div
-              key={token.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-2 text-sm"
+              className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                validation.status === 'connected'
+                  ? 'bg-emerald-500/15'
+                  : validation.status === 'partial'
+                    ? 'bg-amber-500/15'
+                    : 'bg-red-500/15'
+              }`}
             >
-              <div>
-                <p className="font-medium">{token.name}</p>
-                <p className="text-xs text-muted-foreground">{token.tokenPrefix}…</p>
-              </div>
-              {canMutate && (
-                <Button
-                  variant="danger"
-                  disabled={revokeMutation.isPending}
-                  onClick={() => revokeMutation.mutate(token.id)}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+              {validation.status === 'connected' ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+              ) : (
+                <Zap className={`h-5 w-5 ${STATUS_COLOR[validation.status]}`} />
               )}
             </div>
-          ))}
-          {tokensQuery.isLoading && (
-            <div className="flex justify-center py-4">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <div>
+              <p className={`font-semibold ${STATUS_COLOR[validation.status]}`}>
+                {STATUS_LABEL[validation.status]}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {embed.connectionReady
+                  ? 'Код готов — скопируйте и вставьте без правок'
+                  : 'Настройка подключения…'}
+              </p>
             </div>
+          </div>
+          {canMutate && (
+            <Button
+              variant="secondary"
+              disabled={provisionMutation.isPending}
+              onClick={() => provisionMutation.mutate()}
+            >
+              {provisionMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Перевыпустить подключение
+            </Button>
           )}
         </div>
-        <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Allowed domains
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {embed.allowedDomains.length ? (
-              embed.allowedDomains.map((d) => (
-                <Badge key={d} variant="muted">
-                  {d}
-                </Badge>
-              ))
-            ) : (
-              <span className="text-sm text-muted-foreground">Любой домен (не рекомендуется для prod)</span>
-            )}
-          </div>
+        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      </Card>
+
+      {/* Quick setup */}
+      <Card className="space-y-4 p-4">
+        <h3 className="font-medium">Быстрое подключение</h3>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Step n={1} title="Скопируйте код" desc="Кнопка ниже — один клик" />
+          <Step n={2} title="Вставьте перед </body>" desc="На страницу операторов" />
+          <Step n={3} title="Готово" desc="~1 минута, без настройки" />
+        </div>
+        <CopyCard label="Operator embed — script" value={embed.scriptEmbedCode} prominent />
+      </Card>
+
+      {/* Token info — masked */}
+      <Card className="space-y-3 p-4">
+        <div className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-primary" />
+          <h4 className="font-medium">Runtime token</h4>
+          <Badge variant="success">Активен</Badge>
+        </div>
+        <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <Metric label="Token" value={embed.activeToken?.tokenPrefix ?? '—'} />
+          <Metric label="Использований" value={String(validation.tokenExchangeCount)} />
+          <Metric
+            label="Последнее использование"
+            value={
+              validation.tokenLastUsedAt
+                ? new Date(validation.tokenLastUsedAt).toLocaleString('ru-RU')
+                : 'Ещё не использовался'
+            }
+          />
+          <Metric
+            label="Истекает"
+            value={
+              validation.tokenExpiresAt
+                ? new Date(validation.tokenExpiresAt).toLocaleDateString('ru-RU')
+                : 'Без срока'
+            }
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(embed.allowedDomains.length ? embed.allowedDomains : center.access.domains).map((d) => (
+            <Badge key={d} variant="muted">
+              {d}
+            </Badge>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <ValidationChip ok={validation.operatorJsReachable} label="operator.js" />
+          <ValidationChip ok={validation.tokenValid} label="Token" />
+          <ValidationChip ok={validation.websocketReady} label="WebSocket" />
+          <ValidationChip ok={validation.rtcAvailable} label="RTC" />
         </div>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <CopyCard label="Standalone URL" value={embed.standaloneUrl.replace(/YOUR_OPERATOR_TOKEN|ort_[\w-]+…/g, displayToken)} />
-        <CopyCard label="operator.js" value={embed.operatorJsUrl} />
-      </div>
-
+      {/* Integrations */}
       <Card className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="font-medium">Способ интеграции</h4>
+          {currentTab && (
+            <span className="text-xs text-muted-foreground">
+              {currentTab.difficulty} · ~{currentTab.minutes} мин
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           {integrationTabs.map((t) => (
             <button
@@ -203,59 +223,84 @@ export function WidgetOperatorEmbedPanel({ widgetId, center, canMutate }: Widget
             </button>
           ))}
         </div>
-        <CopyCard label={`Integration — ${integrationTab}`} value={codePreview} mono />
+        <CopyCard label={`Готовый код — ${integrationTab}`} value={codePreview} prominent />
       </Card>
 
+      <div className="grid gap-3 sm:grid-cols-2">
+        <CopyCard label="Standalone URL" value={embed.standaloneUrl} />
+        <CopyCard label="Widget script (готов)" value={center.embedCode} />
+      </div>
+
+      {/* Live preview */}
       <Card className="overflow-hidden p-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-2">
-          <span className="text-xs text-muted-foreground">Live preview — operator runtime</span>
-          <a
-            href={embed.standaloneUrl.replace(/YOUR_OPERATOR_TOKEN|ort_[\w-]+…/g, displayToken)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            Открыть <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-        {displayToken === 'YOUR_OPERATOR_TOKEN' ? (
-          <div className="flex h-[360px] items-center justify-center p-6 text-center text-sm text-muted-foreground">
-            Сгенерируйте runtime token для live preview.
+          <span className="text-xs text-muted-foreground">Live preview</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              Operators online: {validation.operatorsOnline}
+            </span>
+            <a
+              href={embed.standaloneUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              Открыть <ExternalLink className="h-3 w-3" />
+            </a>
           </div>
-        ) : (
-          <iframe
-            title="Operator preview"
-            src={embed.runtimeUrl.replace(/YOUR_OPERATOR_TOKEN|ort_[\w-]+…/g, displayToken)}
-            className="h-[360px] w-full bg-[#0f1419]"
-            allow="camera; microphone; fullscreen; autoplay; display-capture"
-          />
-        )}
+        </div>
+        <iframe
+          title="Operator preview"
+          src={embed.runtimeUrl}
+          className="h-[360px] w-full bg-[#0f1419]"
+          allow="camera; microphone; fullscreen; autoplay; display-capture"
+        />
       </Card>
 
-      <OperatorConnectionSteps embed={embed} />
+      {/* Self-host */}
+      <Card className="space-y-3 p-4">
+        <h4 className="font-medium">Self-host / White-label</h4>
+        <p className="text-sm text-muted-foreground">
+          ZIP-архив с готовым `.env`, nginx конфигом, README и runtime assets — без ручной сборки.
+        </p>
+        <Button disabled={downloading} onClick={() => void downloadZip()}>
+          {downloading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="mr-2 h-4 w-4" />
+          )}
+          Скачать self-host архив
+        </Button>
+      </Card>
     </div>
   );
 }
 
-function OperatorConnectionSteps({ embed }: { embed: OperatorConnectionCenterDto }) {
+function Step({ n, title, desc }: { n: number; title: string; desc: string }) {
   return (
-    <Card className="space-y-2 p-4">
-      <h4 className="font-medium">Инструкция — self-host / white-label</h4>
-      <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
-        <li>Скачайте пакет <code className="text-xs">operator-runtime/</code> из раздела Self-host.</li>
-        <li>Разместите на своём домене с HTTPS и настройте nginx reverse proxy к API.</li>
-        <li>Укажите <code className="text-xs">BOTME_API_URL</code> и WebSocket endpoint в config.json.</li>
-        <li>Вставьте operator.js или iframe с runtime token на страницу операторов.</li>
-        <li>
-          Standalone:{' '}
-          <a className="text-primary hover:underline" href={embed.standaloneUrl} target="_blank" rel="noreferrer">
-            {embed.standaloneUrl}
-          </a>
-        </li>
-      </ol>
-      <Button variant="secondary" onClick={() => window.open('/operator-runtime/config.json', '_blank')}>
-        <RefreshCw className="mr-2 h-3 w-3" /> config.json
-      </Button>
-    </Card>
+    <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+      <p className="text-xs font-semibold text-primary">ШАГ {n}</p>
+      <p className="mt-1 font-medium">{title}</p>
+      <p className="text-xs text-muted-foreground">{desc}</p>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-muted/20 p-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate font-medium">{value}</p>
+    </div>
+  );
+}
+
+function ValidationChip({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div
+      className={`rounded-md px-2 py-1 text-center ${ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-muted/30 text-muted-foreground'}`}
+    >
+      {ok ? '🟢' : '🔴'} {label}
+    </div>
   );
 }

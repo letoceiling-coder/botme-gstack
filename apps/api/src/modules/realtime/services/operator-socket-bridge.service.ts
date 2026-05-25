@@ -78,6 +78,20 @@ export class OperatorSocketBridge {
     this.server.to(`operator:${workspaceId}`).emit(type, payload);
     return true;
   }
+
+  disconnectByRuntimeTokenId(runtimeTokenId: string): number {
+    if (!this.server) return 0;
+    let count = 0;
+    for (const [, socket] of this.server.sockets) {
+      const user = (socket.data as { user?: { runtimeTokenId?: string } } | undefined)?.user;
+      if (user?.runtimeTokenId === runtimeTokenId) {
+        socket.emit('error', { message: 'Operator token отозван' });
+        socket.disconnect(true);
+        count += 1;
+      }
+    }
+    return count;
+  }
 }
 
 function toMeta(envelope: RealtimeEventEnvelope): RealtimeEventMeta {

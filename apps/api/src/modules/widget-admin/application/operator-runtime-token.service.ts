@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'node:crypto';
-import { hashToken } from '@botme/crypto';
+import { EnvelopeEncryptionService, hashToken } from '@botme/crypto';
 import type {
   CreateOperatorRuntimeTokenInput,
   JwtPayload,
@@ -11,9 +11,10 @@ import type {
   UpdateOperatorRuntimeTokenInput,
 } from '@botme/shared';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { OperatorSocketBridge } from '../../realtime/services/operator-socket-bridge.service';
 
 function generatePlainToken(): string {
-  return `ort_${randomBytes(32).toString('base64url')}`;
+  return `ort_live_${randomBytes(24).toString('base64url')}`;
 }
 
 function hostnameFromOrigin(origin: string | undefined): string | null {
@@ -36,10 +37,13 @@ function domainMatches(hostname: string, pattern: string): boolean {
 
 @Injectable()
 export class OperatorRuntimeTokenService {
+  private readonly logger = new Logger(OperatorRuntimeTokenService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly operatorBridge: OperatorSocketBridge,
   ) {}
 
   async list(workspaceId: string, widgetId: string): Promise<OperatorRuntimeTokenDto[]> {
@@ -57,25 +61,70 @@ export class OperatorRuntimeTokenService {
     input: CreateOperatorRuntimeTokenInput,
   ): Promise<OperatorRuntimeTokenDto> {
     await this.assertWidget(workspaceId, widgetId);
-    const plainToken = generatePlainToken();
-    const expiresAt = input.expiresInDays
-      ? new Date(Date.now() + input.expiresInDays * 86_400_000)
-      : null;
+    return this.insertToken(workspaceId, widgetId, userId, input.name, input.allowedDomains, input.expiresInDays, false);
+  }
 
-    const row = await this.prisma.client.operatorRuntimeToken.create({
-      data: {
+  async ensureDefaultToken(
+    workspaceId: string,
+    widgetId: string,
+    userId: string,
+    allowedDomains: string[],
+  ): Promise<{ dto: OperatorRuntimeTokenDto; plainToken: string }> {
+    await this.assertWidget(workspaceId, widgetId);
+
+    const active = await this.prisma.client.operatorRuntimeToken.findFirst({
+      where: {
         workspaceId,
         widgetId,
-        name: input.name,
-        tokenHash: hashToken(plainToken),
-        tokenPrefix: plainToken.slice(0, 16),
-        allowedDomains: input.allowedDomains,
-        expiresAt,
-        createdById: userId,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
 
-    return { ...this.toDto(row), plainToken };
+    if (active?.tokenEncrypted) {
+      const plainToken = this.decryptStoredToken(Buffer.from(active.tokenEncrypted), workspaceId, active.keyVersion);
+      return { dto: this.toDto(active), plainToken };
+    }
+
+    if (active && !active.tokenEncrypted) {
+      await this.revokeInternal(active.id);
+    }
+
+    const created = await this.insertToken(
+      workspaceId,
+      widgetId,
+      userId,
+      'Подключение по умолчанию',
+      allowedDomains,
+      undefined,
+      true,
+    );
+    return {
+      dto: created,
+      plainToken: created.plainToken ?? '',
+    };
+  }
+
+  async regenerate(
+    workspaceId: string,
+    widgetId: string,
+    userId: string,
+  ): Promise<{ dto: OperatorRuntimeTokenDto; plainToken: string }> {
+    await this.assertWidget(workspaceId, widgetId);
+    const widget = await this.prisma.client.widgetInstance.findFirst({
+      where: { id: widgetId, workspaceId },
+      include: { domains: true },
+    });
+    const allowedDomains = widget?.domains.map((d) => d.domain) ?? [];
+    const active = await this.prisma.client.operatorRuntimeToken.findMany({
+      where: { workspaceId, widgetId, revokedAt: null },
+      select: { id: true },
+    });
+    for (const row of active) {
+      await this.revokeInternal(row.id);
+    }
+    return this.ensureDefaultToken(workspaceId, widgetId, userId, allowedDomains);
   }
 
   async update(
@@ -97,11 +146,23 @@ export class OperatorRuntimeTokenService {
 
   async revoke(workspaceId: string, widgetId: string, tokenId: string): Promise<{ ok: boolean }> {
     await this.assertToken(workspaceId, widgetId, tokenId);
-    await this.prisma.client.operatorRuntimeToken.update({
-      where: { id: tokenId },
-      data: { revokedAt: new Date() },
-    });
+    await this.revokeInternal(tokenId);
     return { ok: true };
+  }
+
+  async getPlainTokenForAdmin(workspaceId: string, widgetId: string): Promise<string | null> {
+    const row = await this.prisma.client.operatorRuntimeToken.findFirst({
+      where: {
+        workspaceId,
+        widgetId,
+        revokedAt: null,
+        tokenEncrypted: { not: null },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+    });
+    if (!row?.tokenEncrypted) return null;
+    return this.decryptStoredToken(Buffer.from(row.tokenEncrypted), workspaceId, row.keyVersion);
   }
 
   async getActiveForWidget(workspaceId: string, widgetId: string): Promise<OperatorRuntimeTokenDto | null> {
@@ -112,7 +173,7 @@ export class OperatorRuntimeTokenService {
         revokedAt: null,
         OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
     return row ? this.toDto(row) : null;
   }
@@ -151,7 +212,10 @@ export class OperatorRuntimeTokenService {
 
     await this.prisma.client.operatorRuntimeToken.update({
       where: { id: row.id },
-      data: { lastUsedAt: new Date() },
+      data: {
+        lastUsedAt: new Date(),
+        exchangeCount: { increment: 1 },
+      },
     });
 
     const accessTtl = Number(this.config.get('JWT_ACCESS_TTL') ?? 900) || 900;
@@ -199,6 +263,67 @@ export class OperatorRuntimeTokenService {
     return row.allowedDomains.some((d) => domainMatches(hostname, d));
   }
 
+  private async insertToken(
+    workspaceId: string,
+    widgetId: string,
+    userId: string,
+    name: string,
+    allowedDomains: string[],
+    expiresInDays: number | undefined,
+    isDefault: boolean,
+  ): Promise<OperatorRuntimeTokenDto> {
+    const plainToken = generatePlainToken();
+    const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000) : null;
+    const encrypted = this.encryptStoredToken(plainToken, workspaceId);
+
+    const row = await this.prisma.client.operatorRuntimeToken.create({
+      data: {
+        workspaceId,
+        widgetId,
+        name,
+        tokenHash: hashToken(plainToken),
+        tokenPrefix: plainToken.slice(0, 20),
+        tokenEncrypted: new Uint8Array(encrypted),
+        keyVersion: 1,
+        allowedDomains,
+        expiresAt,
+        isDefault,
+        createdById: userId,
+      },
+    });
+
+    return { ...this.toDto(row), plainToken };
+  }
+
+  private async revokeInternal(tokenId: string): Promise<void> {
+    await this.prisma.client.operatorRuntimeToken.update({
+      where: { id: tokenId },
+      data: { revokedAt: new Date() },
+    });
+    const disconnected = this.operatorBridge.disconnectByRuntimeTokenId(tokenId);
+    if (disconnected > 0) {
+      this.logger.log(`Revoked operator token ${tokenId}, disconnected ${disconnected} socket(s)`);
+    }
+  }
+
+  private encryptStoredToken(plainToken: string, workspaceId: string): Buffer {
+    const crypto = this.getCrypto();
+    return crypto.pack(crypto.encrypt(plainToken, workspaceId));
+  }
+
+  private decryptStoredToken(encrypted: Buffer, workspaceId: string, keyVersion: number): string {
+    const crypto = this.getCrypto();
+    return crypto.decrypt(crypto.unpack(encrypted, keyVersion), workspaceId);
+  }
+
+  private getCrypto(): EnvelopeEncryptionService {
+    const masterKey = this.config.get<string>('MASTER_ENCRYPTION_KEY');
+    if (!masterKey || masterKey.length !== 64) {
+      throw new Error('MASTER_ENCRYPTION_KEY must be configured (64 hex chars)');
+    }
+    return new EnvelopeEncryptionService(masterKey);
+  }
+
   private async assertWidget(workspaceId: string, widgetId: string): Promise<void> {
     const widget = await this.prisma.client.widgetInstance.findFirst({
       where: { id: widgetId, workspaceId, deletedAt: null },
@@ -221,16 +346,20 @@ export class OperatorRuntimeTokenService {
     expiresAt: Date | null;
     revokedAt: Date | null;
     lastUsedAt: Date | null;
+    exchangeCount: number;
+    isDefault: boolean;
     createdAt: Date;
   }): OperatorRuntimeTokenDto {
     return {
       id: row.id,
       name: row.name,
-      tokenPrefix: row.tokenPrefix,
+      tokenPrefix: `${row.tokenPrefix}…`,
       allowedDomains: row.allowedDomains,
       expiresAt: row.expiresAt?.toISOString() ?? null,
       revokedAt: row.revokedAt?.toISOString() ?? null,
       lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+      exchangeCount: row.exchangeCount,
+      isDefault: row.isDefault,
       createdAt: row.createdAt.toISOString(),
     };
   }

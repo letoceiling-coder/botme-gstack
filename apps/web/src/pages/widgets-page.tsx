@@ -352,7 +352,7 @@ function WidgetSetupTab({
             <li key={step}>{step}</li>
           ))}
         </ol>
-        <CopyCard label="Embed code" value={center.embedCode} />
+        <CopyCard label="Embed code — виджет" value={center.embedCode} prominent hint="Готово к использованию" />
       </div>
 
       <div>

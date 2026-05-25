@@ -370,6 +370,23 @@ export const api = {
       }),
     revokeOperatorToken: (id: string, tokenId: string) =>
       request<{ ok: boolean }>(`/widgets/${id}/operator-tokens/${tokenId}`, { method: 'DELETE' }),
+    provisionOperatorConnection: (id: string) =>
+      request<import('@botme/shared').OperatorProvisionResultDto>(`/widgets/${id}/operator-connection/provision`, {
+        method: 'POST',
+      }),
+    operatorEmbedValidation: (id: string) =>
+      request<import('@botme/shared').OperatorEmbedValidationDto>(`/widgets/${id}/operator-embed/validation`),
+    downloadOperatorSelfHostZip: async (id: string, filename: string) => {
+      const res = await fetch(`/api/widgets/${id}/operator-self-host.zip`, { credentials: 'include' });
+      if (!res.ok) throw new ApiError(await res.text(), res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
   },
 
   members: {

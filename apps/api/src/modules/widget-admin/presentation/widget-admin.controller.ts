@@ -19,12 +19,23 @@ export class WidgetAdminController {
 
   @Get(':id/connection-center')
   getConnectionCenter(@CurrentUser() user: AuthenticatedRequest['user'], @Param('id') id: string) {
-    return this.connectionCenterService.getConnectionCenter(user.workspaceId, id);
+    return this.connectionCenterService.getConnectionCenter(user.workspaceId, id, user.sub);
+  }
+
+  @Post(':id/operator-connection/provision')
+  @Roles('ADMIN')
+  provisionOperator(@CurrentUser() user: AuthenticatedRequest['user'], @Param('id') id: string) {
+    return this.connectionCenterService.provisionOperatorConnection(user.workspaceId, id, user.sub);
+  }
+
+  @Get(':id/operator-embed/validation')
+  operatorValidation(@CurrentUser() user: AuthenticatedRequest['user'], @Param('id') id: string) {
+    return this.connectionCenterService.getOperatorValidation(user.workspaceId, id);
   }
 
   @Get(':id/health')
   getHealth(@CurrentUser() user: AuthenticatedRequest['user'], @Param('id') id: string) {
-    return this.connectionCenterService.getConnectionCenter(user.workspaceId, id).then((c) => c.health);
+    return this.connectionCenterService.getConnectionCenter(user.workspaceId, id, user.sub).then((c) => c.health);
   }
 
   @Get(':id/preview-session')
