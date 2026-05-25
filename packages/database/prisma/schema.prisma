@@ -1,0 +1,921 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum AiProviderType {
+  OPENAI
+  OPENROUTER
+  ANTHROPIC
+  GEMINI
+  OLLAMA
+  OLLAMA_NEEKLO
+  GROQ
+  DEEPSEEK
+  TOGETHER
+  MISTRAL
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INVALID
+  DISABLED
+  PENDING_VALIDATION
+}
+
+enum AgentStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AssistantStatus {
+  ACTIVE
+  DRAFT
+  ARCHIVED
+}
+
+enum AssistantVisibility {
+  PUBLIC
+  INTERNAL
+  PRIVATE
+}
+
+enum KnowledgeBaseStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum KbDocumentStatus {
+  PENDING
+  UPLOADED
+  QUEUED
+  PARSING
+  CHUNKING
+  EMBEDDING
+  INDEXED
+  FAILED
+  RETRYING
+  DELETED
+}
+
+enum DocumentSource {
+  TEXT
+  FILE
+  URL
+}
+
+enum CitationMode {
+  INLINE
+  FOOTNOTE
+  OFF
+}
+
+enum ToolStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ToolType {
+  CALCULATOR
+  HTTP_REQUEST
+  LEAD_SAVER
+  RAG_SEARCH
+  MEMORY
+  WEBHOOK
+  WEB_SEARCH
+  EMAIL_STUB
+  CRM_NOTE
+  CUSTOM
+}
+
+enum ToolExecutionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  TIMEOUT
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CLOSED
+  SPAM
+}
+
+enum LeadSource {
+  WIDGET
+  TEST_CHAT
+  API
+  MANUAL
+}
+
+enum PlaygroundMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  locale       String    @default("ru")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  memberships        WorkspaceMember[]
+  refreshTokens      RefreshToken[]
+  agentPromptVersions AgentPromptVersion[]
+  playgroundSessions PlaygroundSession[]
+  auditLogs          AuditLog[]
+  createdAssistants  Assistant[]          @relation("AssistantCreator")
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Workspace {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  members            WorkspaceMember[]
+  aiIntegrations     AiIntegration[]
+  agents             Agent[]
+  assistants         Assistant[]
+  knowledgeBases     KnowledgeBase[]
+  kbDocuments        KbDocument[]
+  kbChunks           KbChunk[]
+  tools              Tool[]
+  toolExecutions     ToolExecution[]
+  leads              Lead[]
+  visitorMemories    VisitorMemory[]
+  crmNotes           CrmNote[]
+  widgetInstances    WidgetInstance[]
+  conversations      Conversation[]
+  messages           Message[]
+  auditLogs          AuditLog[]
+  playgroundSessions PlaygroundSession[]
+  agentModelFallbacks AgentModelFallback[]
+  visitorSessions    VisitorSession[]
+  callSessions       CallSession[]
+  operatorSessionLocks OperatorSessionLock[]
+
+  @@index([deletedAt])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model AiIntegration {
+  id              String            @id @default(cuid())
+  workspaceId     String
+  provider        AiProviderType
+  name            String
+  encryptedSecret Bytes
+  keyVersion      Int               @default(1)
+  isDefault       Boolean           @default(false)
+  status          IntegrationStatus @default(PENDING_VALIDATION)
+  lastValidatedAt DateTime?
+  health          Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  models    AiModelCache[]
+  agents    Agent[]
+  knowledgeBases KnowledgeBase[]
+  agentModelFallbacks AgentModelFallback[]
+
+  @@unique([workspaceId, provider, name])
+  @@index([workspaceId, deletedAt])
+  @@index([workspaceId, status])
+  @@map("ai_integrations")
+}
+
+model AiModelCache {
+  id                String         @id @default(cuid())
+  integrationId     String
+  externalId        String
+  provider          AiProviderType
+  displayName       String
+  contextWindow     Int
+  promptPrice       Decimal?       @db.Decimal(18, 8)
+  completionPrice   Decimal?       @db.Decimal(18, 8)
+  supportsTools     Boolean        @default(false)
+  supportsVision    Boolean        @default(false)
+  supportsReasoning Boolean        @default(false)
+  isFree            Boolean        @default(false)
+  syncedAt          DateTime
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  integration AiIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, externalId])
+  @@index([integrationId, isFree])
+  @@map("ai_model_cache")
+}
+
+model Agent {
+  id                    String      @id @default(cuid())
+  workspaceId           String
+  integrationId         String
+  modelId               String
+  name                  String
+  description           String      @default("")
+  temperature           Float       @default(0.7)
+  topP                  Float       @default(1)
+  maxTokens             Int         @default(4096)
+  systemPrompt          String      @db.Text
+  safetySettings        Json        @default("{}")
+  streamingEnabled      Boolean     @default(true)
+  toolsEnabled          Boolean     @default(false)
+  embeddingsModel       String?
+  status                AgentStatus @default(ACTIVE)
+  activePromptVersionId String?     @unique
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  deletedAt             DateTime?
+
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  integration         AiIntegration        @relation(fields: [integrationId], references: [id], onDelete: Restrict)
+  activePromptVersion AgentPromptVersion?  @relation("ActiveAgentPrompt", fields: [activePromptVersionId], references: [id], onDelete: SetNull)
+  promptVersions      AgentPromptVersion[] @relation("AgentPromptVersions")
+  assistants          Assistant[]
+  playgroundSessions  PlaygroundSession[]
+  modelFallbacks      AgentModelFallback[]
+
+  @@index([workspaceId, deletedAt])
+  @@index([workspaceId, status])
+  @@index([integrationId])
+  @@map("agents")
+}
+
+model AgentModelFallback {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  agentId         String
+  position        Int
+  integrationId   String
+  modelId         String
+  enabled         Boolean  @default(true)
+  maxRetries      Int      @default(2)
+  timeoutMs       Int      @default(120000)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent       Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  integration AiIntegration @relation(fields: [integrationId], references: [id], onDelete: Restrict)
+
+  @@unique([agentId, position])
+  @@index([agentId, enabled])
+  @@index([workspaceId, agentId])
+  @@map("agent_model_fallbacks")
+}
+
+model AgentPromptVersion {
+  id        String   @id @default(cuid())
+  agentId   String
+  version   Int
+  content   String   @db.Text
+  createdBy String
+  createdAt DateTime @default(now())
+
+  agent        Agent  @relation("AgentPromptVersions", fields: [agentId], references: [id], onDelete: Cascade)
+  createdByUser User  @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  activeFor    Agent? @relation("ActiveAgentPrompt")
+
+  @@unique([agentId, version])
+  @@index([agentId, createdAt])
+  @@map("agent_prompt_versions")
+}
+
+model Assistant {
+  id              String              @id @default(cuid())
+  workspaceId     String
+  agentId         String
+  name            String
+  slug            String
+  description     String              @default("")
+  avatarUrl       String?
+  welcomeMessage  String              @default("")
+  placeholder     String              @default("")
+  tone            String              @default("neutral")
+  language        String              @default("ru")
+  isActive        Boolean             @default(false)
+  visibility      AssistantVisibility @default(INTERNAL)
+  behavior        Json                @default("{}")
+  escalation      Json?
+  leadCapture     Json?
+  status          AssistantStatus     @default(DRAFT)
+  createdBy       String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deletedAt       DateTime?
+
+  workspace       Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent           Agent                      @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  createdByUser   User                       @relation("AssistantCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  runtimeSettings AssistantRuntimeSettings?
+  knowledgeBases  AssistantKnowledgeBase[]
+  tools           AssistantTool[]
+  runtimeSnapshots AssistantRuntimeSnapshot[]
+  widgets         WidgetInstance[]
+  conversations   Conversation[]
+  toolExecutions  ToolExecution[]
+  leads           Lead[]
+  crmNotes        CrmNote[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, deletedAt])
+  @@index([workspaceId, status])
+  @@index([workspaceId, isActive])
+  @@index([agentId])
+  @@map("assistants")
+}
+
+model AssistantRuntimeSettings {
+  assistantId         String   @id
+  maxContextMessages  Int      @default(20)
+  memoryEnabled       Boolean  @default(true)
+  citationsEnabled    Boolean  @default(false)
+  moderationEnabled   Boolean  @default(true)
+  fallbackMessage     String   @default("Извините, я не могу ответить сейчас.")
+  typingSimulation    Boolean  @default(true)
+  streamingEnabled    Boolean  @default(true)
+  theme               Json     @default("{}")
+  widgetPosition      String   @default("bottom-right")
+  language            String   @default("ru")
+  offlineMessage      String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  assistant Assistant @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+
+  @@map("assistant_runtime_settings")
+}
+
+model KnowledgeBase {
+  id                     String              @id @default(cuid())
+  workspaceId            String
+  name                   String
+  description            String              @default("")
+  status                 KnowledgeBaseStatus @default(ACTIVE)
+  embeddingIntegrationId String?
+  embeddingModelId       String              @default("text-embedding-3-small")
+  chunkSize              Int                 @default(700)
+  chunkOverlap           Int                 @default(100)
+  retrievalTopK          Int                 @default(8)
+  similarityThreshold    Float               @default(0.72)
+  rerankEnabled          Boolean             @default(false)
+  citationMode           CitationMode        @default(INLINE)
+  chunkStrategy          String              @default("smart")
+  hybridRetrievalEnabled Boolean             @default(true)
+  metadataExtractionEnabled Boolean          @default(true)
+  aiEnrichmentEnabled    Boolean             @default(false)
+  semanticMode           String              @default("hybrid")
+  documentCount          Int                 @default(0)
+  chunkCount             Int                 @default(0)
+  tokenCount             Int                 @default(0)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  deletedAt              DateTime?
+
+  workspace            Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  embeddingIntegration AiIntegration?           @relation(fields: [embeddingIntegrationId], references: [id], onDelete: SetNull)
+  assistants           AssistantKnowledgeBase[]
+  documents            KbDocument[]
+  chunks               KbChunk[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, deletedAt])
+  @@map("knowledge_bases")
+}
+
+model KbDocument {
+  id               String           @id @default(cuid())
+  workspaceId      String
+  knowledgeBaseId  String
+  sourceType       DocumentSource   @default(FILE)
+  title            String           @default("")
+  filename         String
+  mimeType         String
+  sizeBytes        Int              @default(0)
+  storageKey       String           @default("")
+  fileHash         String
+  sourceUrl        String?
+  parsedStorageKey String?
+  rawContent       String?          @db.Text
+  crawlConfig      Json?
+  status           KbDocumentStatus @default(PENDING)
+  errorMessage     String?
+  retryCount       Int              @default(0)
+  chunkCount       Int              @default(0)
+  tokenCount       Int              @default(0)
+  indexedAt        DateTime?
+  metadata         Json                @default("{}")
+  category         String?
+  tags             String[]            @default([])
+  language         String              @default("ru")
+  documentType     String              @default("general")
+  retrievalPriority Float              @default(1.0)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  chunks        KbChunk[]
+
+  @@index([workspaceId, knowledgeBaseId, deletedAt])
+  @@index([knowledgeBaseId, status])
+  @@index([knowledgeBaseId, sourceType])
+  @@map("kb_documents")
+}
+
+model KbChunk {
+  id              String                       @id @default(cuid())
+  workspaceId     String
+  knowledgeBaseId String
+  documentId      String
+  chunkIndex      Int
+  content         String                       @db.Text
+  tokenCount      Int
+  sourcePage      Int?
+  sourceSection   String?
+  startOffset     Int
+  endOffset       Int
+  contentHash     String
+  hasEmbedding    Boolean                      @default(false)
+  metadata        Json                         @default("{}")
+  parentChunkId   String?
+  hierarchyLevel  Int                          @default(0)
+  topic           String?
+  tags            String[]                     @default([])
+  retrievalPriority Float                      @default(1.0)
+  embedding       Unsupported("vector(1536)")?
+  createdAt       DateTime                     @default(now())
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document      KbDocument    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  parentChunk   KbChunk?      @relation("ChunkHierarchy", fields: [parentChunkId], references: [id], onDelete: SetNull)
+  childChunks   KbChunk[]     @relation("ChunkHierarchy")
+
+  @@unique([documentId, chunkIndex])
+  @@unique([documentId, contentHash])
+  @@index([workspaceId, knowledgeBaseId])
+  @@index([parentChunkId])
+  @@map("kb_chunks")
+}
+
+model Tool {
+  id          String     @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String
+  description String     @default("")
+  category    String     @default("general")
+  type        ToolType   @default(CUSTOM)
+  status      ToolStatus @default(ACTIVE)
+  enabled     Boolean    @default(true)
+  schema      Json       @default("{}")
+  permissions Json       @default("[]")
+  timeoutMs   Int        @default(10000)
+  retryPolicy Json       @default("{\"maxRetries\":0,\"backoffMs\":0}")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assistants  AssistantTool[]
+  executions  ToolExecution[]
+
+  @@unique([workspaceId, name])
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, deletedAt])
+  @@index([workspaceId, type])
+  @@map("tools")
+}
+
+model ToolExecution {
+  id             String              @id @default(cuid())
+  workspaceId    String
+  toolId         String
+  assistantId    String?
+  conversationId String?
+  status         ToolExecutionStatus @default(PENDING)
+  input          Json                @default("{}")
+  output         Json?
+  error          String?
+  latencyMs      Int?
+  retryCount     Int                 @default(0)
+  createdAt      DateTime            @default(now())
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tool         Tool          @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  assistant    Assistant?    @relation(fields: [assistantId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, toolId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([conversationId])
+  @@map("tool_executions")
+}
+
+model Lead {
+  id             String     @id @default(cuid())
+  workspaceId    String
+  assistantId    String?
+  conversationId String?
+  status         LeadStatus @default(NEW)
+  source         LeadSource @default(WIDGET)
+  name           String?
+  email          String?
+  phone          String?
+  notes          String?    @db.Text
+  metadata       Json       @default("{}")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assistant    Assistant?    @relation(fields: [assistantId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([conversationId])
+  @@map("leads")
+}
+
+model VisitorMemory {
+  id          String   @id @default(cuid())
+  workspaceId String
+  visitorId   String
+  key         String
+  value       String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, visitorId, key])
+  @@index([workspaceId, visitorId])
+  @@map("visitor_memories")
+}
+
+model CrmNote {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  assistantId    String?
+  conversationId String?
+  content        String   @db.Text
+  createdAt      DateTime @default(now())
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assistant Assistant? @relation(fields: [assistantId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([conversationId])
+  @@map("crm_notes")
+}
+
+model AssistantKnowledgeBase {
+  assistantId     String
+  knowledgeBaseId String
+  createdAt       DateTime @default(now())
+
+  assistant     Assistant     @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+
+  @@id([assistantId, knowledgeBaseId])
+  @@map("assistant_knowledge_bases")
+}
+
+model AssistantTool {
+  assistantId String
+  toolId      String
+  createdAt   DateTime @default(now())
+
+  assistant Assistant @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+  tool      Tool      @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@id([assistantId, toolId])
+  @@map("assistant_tools")
+}
+
+model AssistantRuntimeSnapshot {
+  id          String   @id @default(cuid())
+  workspaceId String
+  assistantId String
+  snapshot    Json
+  createdAt   DateTime @default(now())
+
+  assistant     Assistant      @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@index([assistantId, createdAt])
+  @@map("assistant_runtime_snapshots")
+}
+
+model WidgetInstance {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  assistantId    String
+  publicKey      String    @unique
+  name           String
+  isActive       Boolean   @default(true)
+  launcherConfig Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assistant     Assistant      @relation(fields: [assistantId], references: [id], onDelete: Restrict)
+  domains       WidgetDomain[]
+  conversations Conversation[]
+  visitorSessions VisitorSession[]
+
+  @@index([workspaceId, deletedAt])
+  @@index([assistantId])
+  @@map("widget_instances")
+}
+
+model WidgetDomain {
+  id        String   @id @default(cuid())
+  widgetId  String
+  domain    String
+  createdAt DateTime @default(now())
+
+  widget WidgetInstance @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+
+  @@unique([widgetId, domain])
+  @@index([domain])
+  @@map("widget_domains")
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  workspaceId   String
+  assistantId   String
+  widgetId      String?
+  snapshotId    String
+  visitorId     String
+  status        ConversationStatus @default(OPEN)
+  lastMessageAt DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  workspace Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assistant Assistant                @relation(fields: [assistantId], references: [id], onDelete: Restrict)
+  widget    WidgetInstance?          @relation(fields: [widgetId], references: [id], onDelete: SetNull)
+  snapshot       AssistantRuntimeSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  messages       Message[]
+  toolExecutions ToolExecution[]
+  leads          Lead[]
+
+  @@index([workspaceId, assistantId])
+  @@index([workspaceId, widgetId])
+  @@index([visitorId])
+  @@index([widgetId, visitorId, status])
+  @@map("conversations")
+}
+
+model Message {
+  id                String      @id @default(cuid())
+  conversationId    String
+  workspaceId       String
+  role              MessageRole
+  content           String      @db.Text
+  tokenUsage        Json?
+  citations         Json?
+  latencyMs         Int?
+  providerMessageId String?
+  toolCalls         Json?
+  createdAt         DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@map("messages")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String?
+  action      String
+  resource    String
+  resourceId  String
+  metadata    Json     @default("{}")
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, resource, resourceId])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+model PlaygroundSession {
+  id                    String           @id @default(cuid())
+  workspaceId           String
+  agentId               String
+  userId                String
+  promptVersionId       String?
+  totalPromptTokens     Int              @default(0)
+  totalCompletionTokens Int              @default(0)
+  totalTokens           Int              @default(0)
+  lastLatencyMs         Int?
+  lastProvider          AiProviderType?
+  lastModel             String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  deletedAt             DateTime?
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent     Agent               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  PlaygroundMessage[]
+
+  @@index([workspaceId, deletedAt])
+  @@index([agentId])
+  @@index([userId])
+  @@map("playground_sessions")
+}
+
+model PlaygroundMessage {
+  id               String                @id @default(cuid())
+  sessionId        String
+  role             PlaygroundMessageRole
+  content          String                @db.Text
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  latencyMs        Int?
+  createdAt        DateTime              @default(now())
+
+  session PlaygroundSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("playground_messages")
+}
+
+enum VisitorSessionStatus {
+  ONLINE
+  IDLE
+  OFFLINE
+}
+
+enum VisitorControlMode {
+  AI
+  OPERATOR
+  HYBRID
+  RTC_ACTIVE
+}
+
+enum CallSessionStatus {
+  IDLE
+  INVITED
+  ACTIVE
+  ENDED
+}
+
+enum CallSessionType {
+  VOICE
+  VIDEO
+}
+
+model VisitorSession {
+  id              String               @id @default(cuid())
+  workspaceId     String
+  widgetId        String
+  visitorId       String
+  conversationId  String?
+  socketId        String?
+  currentPage     String?
+  country         String?
+  device          Json?
+  controlMode     VisitorControlMode   @default(AI)
+  status          VisitorSessionStatus @default(ONLINE)
+  tabVisible      Boolean              @default(true)
+  reconnectCount  Int                  @default(0)
+  lastHeartbeatAt DateTime             @default(now())
+  connectedAt     DateTime             @default(now())
+  disconnectedAt  DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  widget    WidgetInstance @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  calls     CallSession[]
+
+  @@unique([workspaceId, widgetId, visitorId])
+  @@index([workspaceId, status, lastHeartbeatAt])
+  @@index([widgetId, status])
+  @@map("visitor_sessions")
+}
+
+model CallSession {
+  id               String            @id @default(cuid())
+  workspaceId      String
+  visitorSessionId String
+  operatorId       String?
+  type             CallSessionType   @default(VIDEO)
+  status           CallSessionStatus @default(IDLE)
+  diagnostics      Json?
+  startedAt        DateTime?
+  endedAt          DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  visitorSession VisitorSession @relation(fields: [visitorSessionId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([visitorSessionId])
+  @@map("call_sessions")
+}
+
+model OperatorSessionLock {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  conversationId String
+  operatorId     String
+  lockedAt       DateTime @default(now())
+  expiresAt      DateTime
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, conversationId])
+  @@index([expiresAt])
+  @@map("operator_session_locks")
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Neeklo Dental — Operator</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0f1419; }
+      #botme-operator-root { height: 100dvh; width: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="botme-operator-root"></div>
+    <script type="module">
+      async function boot() {
+        let operatorKey = '';
+        try {
+          const cfg = await fetch('/demo-config.json').then((r) => (r.ok ? r.json() : null));
+          operatorKey = cfg?.operatorKey ?? cfg?.widgetPublicKey ?? '';
+        } catch { /* optional until seed */ }
+
+        const script = document.createElement('script');
+        script.src = '/operator-panel.js';
+        script.async = true;
+        script.dataset.mountId = 'botme-operator-root';
+        script.dataset.fullscreen = 'true';
+        if (operatorKey) script.dataset.operatorKey = operatorKey;
+        document.body.appendChild(script);
+      }
+      void boot();
+    </script>
+  </body>
+</html>

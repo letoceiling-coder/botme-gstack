@@ -1,0 +1,36 @@
+-- M6 KB Overhaul schema delta
+
+CREATE TYPE "DocumentSource" AS ENUM ('TEXT', 'FILE', 'URL');
+CREATE TYPE "CitationMode" AS ENUM ('INLINE', 'FOOTNOTE', 'OFF');
+
+ALTER TYPE "KbDocumentStatus" ADD VALUE IF NOT EXISTS 'QUEUED';
+ALTER TYPE "KbDocumentStatus" ADD VALUE IF NOT EXISTS 'RETRYING';
+
+ALTER TABLE "knowledge_bases"
+  ADD COLUMN IF NOT EXISTS "chunkSize" INTEGER NOT NULL DEFAULT 700,
+  ADD COLUMN IF NOT EXISTS "chunkOverlap" INTEGER NOT NULL DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS "retrievalTopK" INTEGER NOT NULL DEFAULT 8,
+  ADD COLUMN IF NOT EXISTS "similarityThreshold" DOUBLE PRECISION NOT NULL DEFAULT 0.72,
+  ADD COLUMN IF NOT EXISTS "rerankEnabled" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "citationMode" "CitationMode" NOT NULL DEFAULT 'INLINE';
+
+ALTER TABLE "kb_documents"
+  ADD COLUMN IF NOT EXISTS "sourceType" "DocumentSource" NOT NULL DEFAULT 'FILE',
+  ADD COLUMN IF NOT EXISTS "title" TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "parsedStorageKey" TEXT,
+  ADD COLUMN IF NOT EXISTS "rawContent" TEXT,
+  ADD COLUMN IF NOT EXISTS "crawlConfig" JSONB,
+  ADD COLUMN IF NOT EXISTS "retryCount" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "indexedAt" TIMESTAMP(3);
+
+ALTER TABLE "kb_documents" ALTER COLUMN "sizeBytes" SET DEFAULT 0;
+ALTER TABLE "kb_documents" ALTER COLUMN "storageKey" SET DEFAULT '';
+
+ALTER TABLE "kb_chunks"
+  ADD COLUMN IF NOT EXISTS "hasEmbedding" BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS "kb_documents_knowledgeBaseId_sourceType_idx"
+  ON "kb_documents"("knowledgeBaseId", "sourceType");
+
+UPDATE "kb_documents" SET "title" = "filename" WHERE "title" = '';

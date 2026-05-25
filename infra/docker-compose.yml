@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: botme-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: botme
+      POSTGRES_PASSWORD: botme
+      POSTGRES_DB: botme
+    ports:
+      - "5432:5432"
+    volumes:
+      - botme_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botme -d botme"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - botme
+
+  redis:
+    image: redis:7-alpine
+    container_name: botme-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - botme_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - botme
+
+  minio:
+    image: minio/minio:latest
+    container_name: botme-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: botme
+      MINIO_ROOT_PASSWORD: botme_secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - botme_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - botme
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: botme-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 botme botme_secret &&
+      mc mb --ignore-existing local/botme &&
+      exit 0
+      "
+    networks:
+      - botme
+
+volumes:
+  botme_postgres_data:
+  botme_redis_data:
+  botme_minio_data:
+
+networks:
+  botme:
+    driver: bridge

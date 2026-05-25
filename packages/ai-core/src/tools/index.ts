@@ -1,0 +1,36 @@
+export * from './tool-port.js';
+export * from './tool-registry.js';
+export * from './tool-sandbox.js';
+export * from './tool-executor.js';
+export * from './tool-loop.js';
+export * from './provider-tool-call.js';
+export * from './stubs/calculator.tool.js';
+export * from './stubs/lead-save.tool.js';
+export * from './stubs/http.tool.js';
+export * from './stubs/rag-search.tool.js';
+export * from './stubs/memory.tool.js';
+export * from './stubs/webhook.tool.js';
+export * from './stubs/web-search.tool.js';
+export * from './stubs/email-stub.tool.js';
+export * from './stubs/crm-note.tool.js';
+
+import { toolRegistry } from './tool-registry.js';
+import { calculatorTool } from './stubs/calculator.tool.js';
+import { leadSaveTool } from './stubs/lead-save.tool.js';
+import { httpTool } from './stubs/http.tool.js';
+import { ragSearchTool } from './stubs/rag-search.tool.js';
+import { memoryTool } from './stubs/memory.tool.js';
+import { webhookTool } from './stubs/webhook.tool.js';
+import { webSearchTool } from './stubs/web-search.tool.js';
+import { emailStubTool } from './stubs/email-stub.tool.js';
+import { crmNoteTool } from './stubs/crm-note.tool.js';
+
+toolRegistry.register(calculatorTool);
+toolRegistry.register(leadSaveTool);
+toolRegistry.register(httpTool);
+toolRegistry.register(ragSearchTool);
+toolRegistry.register(memoryTool);
+toolRegistry.register(webhookTool);
+toolRegistry.register(webSearchTool);
+toolRegistry.register(emailStubTool);
+toolRegistry.register(crmNoteTool);

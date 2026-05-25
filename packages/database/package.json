@@ -1,0 +1,25 @@
+{
+  "name": "@botme/database",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "generate": "dotenv -e ../../.env -- prisma generate",
+    "migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
+    "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "migrate:status": "dotenv -e ../../.env -- prisma migrate status",
+    "push": "dotenv -e ../../.env -- prisma db push",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo ok"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^8.0.0",
+    "prisma": "^6.5.0",
+    "typescript": "^5.8.2"
+  }
+}

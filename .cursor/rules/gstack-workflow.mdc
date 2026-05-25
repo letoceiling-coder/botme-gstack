@@ -1,0 +1,91 @@
+---
+description: Mandatory GSTACK workflow for all Botme sprints — plan, careful, review, deploy
+alwaysApply: true
+---
+
+# GSTACK Workflow (mandatory for every sprint)
+
+**Never use quick Cursor mode without gstack.** Read and execute skills from `.gstack/` (→ `~/gstack`). Do not skip phases or improvise a lighter process.
+
+## Mandatory 3-phase flow (every task)
+
+| # | Skill | Purpose |
+|---|-------|---------|
+| 1 | `@gstack-plan-eng-review` | Architecture, risks, dependencies, impact/migration/deployment analysis — **lock plan before coding** |
+| 2 | `@gstack-careful` | Production-safe implementation: tenant isolation, backwards compatibility, no regressions |
+| 3 | `@gstack-review` | Code, security, performance, architecture validation, production validation |
+
+### Supplementary skills (use when applicable)
+
+| Skill | When |
+|-------|------|
+| `@gstack-investigate` | Bugs/regressions — root cause before fix |
+| `@gstack-qa` | Browser QA, mobile-first, zero console errors |
+| `@gstack-deploy` / `land-and-deploy` | After implementation — merge + prod rollout |
+
+Chain: **plan → careful implement → review → (qa) → deploy**.
+
+## Architecture guardrails (never break)
+
+- Snapshot system (assistant/agent runtime snapshots)
+- WebSocket pipeline (`/admin`, `/widget`, reconnect)
+- Auth + refresh (httpOnly cookies, JWT)
+- RAG pipeline (retrieval, citations, chunking)
+- Tool isolation + tenant boundaries
+- Deploy pipeline (`infra/scripts/deploy-production.sh`)
+- Production nginx — **only** `agent.neeklo.ru`; never touch other vhosts/upstreams/certs
+
+## Implementation rules
+
+- Analyze first — read code, trace data flow, check git before changing
+- Minimal invasive diffs; no full architecture rewrites
+- No mock logic, fake data, or placeholder pages in shipped code
+- Strict TypeScript — no `any`, no `@ts-ignore`
+- Mobile-first UI; RU-first copy
+- Production-safe migrations only; backwards compatible
+
+## Required validation (after every sprint)
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm lint
+pnpm build
+```
+
+Production tasks **also require**:
+
+```bash
+./infra/scripts/deploy-production.sh
+```
+
+Then verify: health, widget.js, /widget/, websocket, pm2 status.
+
+## Required report (after every sprint)
+
+Write `docs/M{N}_REPORT.md` including:
+
+- Architecture changes
+- Changed files
+- Migrations (if any)
+- Nginx / PM2 changes (if touched)
+- Deploy steps + **rollback notes**
+- Production validation (curl, pm2, nginx)
+- Unresolved risks
+- Readiness %
+
+## Production baseline (agent.neeklo.ru)
+
+**Readiness ~92%** — stable: AI runtime, RAG, widget runtime, native tool calling, Ollama/OpenRouter/OpenAI, realtime, deploy pipeline, snapshots.
+
+**Next sprints:** analytics, team/settings, billing, workflow builder, voice/video, automation runtime, advanced tools, OCR/docx/xlsx ingestion.
+
+## Quality bar
+
+1. Analyze first
+2. No mock logic
+3. Production-ready only
+4. Strict TypeScript
+5. Mobile-first
+6. Zero console errors
+7. Zero TS errors

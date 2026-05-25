@@ -1,0 +1,17 @@
+{
+  "name": "@botme/realtime-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo ok",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}
