@@ -91,7 +91,7 @@ export class OperatorGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const payload = this.jwt.verify<JwtPayload>(token, {
         secret: this.config.get<string>('JWT_ACCESS_SECRET'),
       });
-      if (payload.type !== 'access' || !hasMinRole(payload.role, 'MEMBER')) {
+      if (payload.type !== 'access' || !hasMinRole(payload.role, 'VIEWER')) {
         throw new UnauthorizedException();
       }
       client.data = { user: payload } satisfies OperatorSocketData;

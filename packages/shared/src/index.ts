@@ -14,3 +14,5 @@ export * from './widgets-admin.js';
 export * from './leads.js';
 export * from './realtime-envelope.js';
 export * from './operator.js';
+export * from './connection-center.js';
+export * from './workspace-members.js';

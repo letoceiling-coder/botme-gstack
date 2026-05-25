@@ -357,6 +357,30 @@ export const api = {
     remove: (id: string) => request<{ ok: boolean }>(`/widgets/${id}`, { method: 'DELETE' }),
     previewSession: (id: string) =>
       request<import('@botme/shared').WidgetPreviewSessionDto>(`/widgets/${id}/preview-session`),
+    connectionCenter: (id: string) =>
+      request<import('@botme/shared').WidgetConnectionCenterDto>(`/widgets/${id}/connection-center`),
+    health: (id: string) =>
+      request<import('@botme/shared').WidgetConnectionHealthDto>(`/widgets/${id}/health`),
+  },
+
+  members: {
+    list: () => request<import('@botme/shared').WorkspaceMemberDto[]>('/workspaces/current/members'),
+    listInvites: () =>
+      request<import('@botme/shared').WorkspaceInviteDto[]>('/workspaces/current/members/invites'),
+    invite: (body: import('@botme/shared').InviteMemberInput) =>
+      request<import('@botme/shared').InviteMemberResultDto>('/workspaces/current/members/invite', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    updateRole: (memberId: string, body: import('@botme/shared').UpdateMemberRoleInput) =>
+      request<import('@botme/shared').WorkspaceMemberDto>(`/workspaces/current/members/${memberId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (memberId: string) =>
+      request<{ ok: boolean }>(`/workspaces/current/members/${memberId}`, { method: 'DELETE' }),
+    revokeInvite: (inviteId: string) =>
+      request<{ ok: boolean }>(`/workspaces/current/members/invites/${inviteId}`, { method: 'DELETE' }),
   },
 
   leads: {

@@ -3,6 +3,7 @@ import type { WorkspaceRole } from './auth.js';
 /** Minimum role ranks — used by RolesGuard and documented for M2+ controllers. */
 export const ROLE_RANK: Record<WorkspaceRole, number> = {
   VIEWER: 1,
+  OPERATOR: 2,
   MEMBER: 2,
   ADMIN: 3,
   OWNER: 4,
@@ -14,23 +15,30 @@ export const ROLE_RANK: Record<WorkspaceRole, number> = {
  */
 export const RBAC = {
   integrations: {
-    read: ['VIEWER', 'MEMBER', 'ADMIN', 'OWNER'] as const,
+    read: ['VIEWER', 'OPERATOR', 'MEMBER', 'ADMIN', 'OWNER'] as const,
     mutate: ['ADMIN', 'OWNER'] as const,
   },
   widgetSettings: {
-    read: ['VIEWER', 'MEMBER', 'ADMIN', 'OWNER'] as const,
+    read: ['VIEWER', 'OPERATOR', 'MEMBER', 'ADMIN', 'OWNER'] as const,
     mutate: ['ADMIN', 'OWNER'] as const,
   },
   assistantRuntime: {
-    read: ['VIEWER', 'MEMBER', 'ADMIN', 'OWNER'] as const,
+    read: ['VIEWER', 'OPERATOR', 'MEMBER', 'ADMIN', 'OWNER'] as const,
     mutate: ['ADMIN', 'OWNER'] as const,
   },
+  operators: {
+    read: ['VIEWER', 'OPERATOR', 'MEMBER', 'ADMIN', 'OWNER'] as const,
+    mutate: ['ADMIN', 'OWNER'] as const,
+  },
+  operatorActions: {
+    use: ['OPERATOR', 'MEMBER', 'ADMIN', 'OWNER'] as const,
+  },
   agents: {
-    read: ['VIEWER', 'MEMBER', 'ADMIN', 'OWNER'] as const,
+    read: ['VIEWER', 'OPERATOR', 'MEMBER', 'ADMIN', 'OWNER'] as const,
     mutate: ['MEMBER', 'ADMIN', 'OWNER'] as const,
   },
   assistants: {
-    read: ['VIEWER', 'MEMBER', 'ADMIN', 'OWNER'] as const,
+    read: ['VIEWER', 'OPERATOR', 'MEMBER', 'ADMIN', 'OWNER'] as const,
     mutate: ['MEMBER', 'ADMIN', 'OWNER'] as const,
   },
   playground: {

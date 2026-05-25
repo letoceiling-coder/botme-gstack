@@ -91,6 +91,13 @@ export class WidgetAdminRepository extends WorkspaceScopedRepository {
   generatePublicKey(): string {
     return `wm_${randomBytes(16).toString('hex')}`;
   }
+
+  getWorkspace(workspaceId: string): Promise<{ id: string; name: string; slug: string } | null> {
+    return this.prisma.client.workspace.findFirst({
+      where: { id: workspaceId, deletedAt: null },
+      select: { id: true, name: true, slug: true },
+    });
+  }
 }
 
 export function toWidgetDto(row: WidgetWithRelations, embedOrigin = 'https://agent.neeklo.ru'): WidgetDto {

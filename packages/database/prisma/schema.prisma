@@ -12,6 +12,7 @@ datasource db {
 enum WorkspaceRole {
   OWNER
   ADMIN
+  OPERATOR
   MEMBER
   VIEWER
 }
@@ -157,6 +158,7 @@ model User {
   playgroundSessions PlaygroundSession[]
   auditLogs          AuditLog[]
   createdAssistants  Assistant[]          @relation("AssistantCreator")
+  sentInvites        WorkspaceInvite[]      @relation("WorkspaceInvitesSent")
 
   @@index([deletedAt])
   @@map("users")
@@ -191,9 +193,29 @@ model Workspace {
   visitorSessions    VisitorSession[]
   callSessions       CallSession[]
   operatorSessionLocks OperatorSessionLock[]
+  workspaceInvites     WorkspaceInvite[]
 
   @@index([deletedAt])
   @@map("workspaces")
+}
+
+model WorkspaceInvite {
+  id          String        @id @default(cuid())
+  workspaceId String
+  email       String
+  role        WorkspaceRole @default(OPERATOR)
+  tokenHash   String        @unique
+  invitedById String
+  acceptedAt  DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("WorkspaceInvitesSent", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+  @@index([expiresAt])
+  @@map("workspace_invites")
 }
 
 model WorkspaceMember {

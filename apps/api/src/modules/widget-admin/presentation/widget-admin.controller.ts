@@ -3,14 +3,28 @@ import { Roles } from '../../../core/decorators/roles.decorator';
 import { CurrentUser } from '../../../core/decorators/current-user.decorator';
 import type { AuthenticatedRequest } from '../../../core/decorators/current-user.decorator';
 import { WidgetAdminService } from '../application/widget-admin.service';
+import { WidgetConnectionCenterService } from '../application/widget-connection-center.service';
 
 @Controller('widgets')
 export class WidgetAdminController {
-  constructor(private readonly widgets: WidgetAdminService) {}
+  constructor(
+    private readonly widgets: WidgetAdminService,
+    private readonly connectionCenterService: WidgetConnectionCenterService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthenticatedRequest['user']) {
     return this.widgets.list(user.workspaceId);
+  }
+
+  @Get(':id/connection-center')
+  getConnectionCenter(@CurrentUser() user: AuthenticatedRequest['user'], @Param('id') id: string) {
+    return this.connectionCenterService.getConnectionCenter(user.workspaceId, id);
+  }
+
+  @Get(':id/health')
+  getHealth(@CurrentUser() user: AuthenticatedRequest['user'], @Param('id') id: string) {
+    return this.connectionCenterService.getConnectionCenter(user.workspaceId, id).then((c) => c.health);
   }
 
   @Get(':id/preview-session')
