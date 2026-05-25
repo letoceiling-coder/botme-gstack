@@ -1,0 +1,13 @@
+{
+  "apiUrl": "https://agent.neeklo.ru/api",
+  "websocketUrl": "wss://agent.neeklo.ru/socket.io",
+  "operatorJsUrl": "https://agent.neeklo.ru/operator.js",
+  "turnHost": "turn.neeklo.ru",
+  "turnUdp": "turn:turn.neeklo.ru:3478?transport=udp",
+  "turnTcp": "turn:turn.neeklo.ru:3478?transport=tcp",
+  "rtcNamespaces": {
+    "widget": "/widget",
+    "operator": "/operator"
+  },
+  "permissionsPolicy": "camera=*, microphone=*, autoplay=*, fullscreen=*, display-capture=*"
+}

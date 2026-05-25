@@ -9,8 +9,9 @@ import { CopyCard } from '@/components/widgets/copy-card';
 import { BrowserDiagnosticsPanel, ServerHealthList } from '@/components/widgets/browser-diagnostics';
 import { HealthStatusChip } from '@/components/widgets/health-status-chip';
 import { WidgetOperatorsPanel } from '@/components/widgets/widget-operators-panel';
+import { WidgetOperatorEmbedPanel } from '@/components/widgets/widget-operator-embed-panel';
 
-type SetupTab = 'widget' | 'operators' | 'rtc' | 'diagnostics' | 'selfhost';
+type SetupTab = 'widget' | 'operator' | 'operators' | 'rtc' | 'diagnostics' | 'selfhost';
 
 export function WidgetsPage() {
   const role = useAuthStore((s) => s.session?.workspace.role);
@@ -85,6 +86,7 @@ export function WidgetsPage() {
 
   const tabs: { id: SetupTab; label: string }[] = [
     { id: 'widget', label: 'Виджет' },
+    { id: 'operator', label: 'Кабинет оператора' },
     { id: 'operators', label: 'Операторы' },
     { id: 'rtc', label: 'RTC' },
     { id: 'diagnostics', label: 'Диагностика' },
@@ -174,6 +176,10 @@ export function WidgetsPage() {
                 />
               )}
 
+              {tab === 'operator' && selected && center && (
+                <WidgetOperatorEmbedPanel widgetId={selected.id} center={center} canMutate={canMutate} />
+              )}
+
               {tab === 'operators' && <WidgetOperatorsPanel />}
 
               {tab === 'rtc' && center && <RtcGuideTab center={center} />}
@@ -224,7 +230,8 @@ export function WidgetsPage() {
                 <p className="text-sm font-medium">Подключение операторов</p>
               </div>
               <CopyCard label="Admin operator" value={center.operatorUrls.adminOperatorUrl} />
-              <CopyCard label="Operator panel (demo)" value={center.operatorUrls.operatorPanelUrl} />
+              <CopyCard label="operator.js" value={center.operatorUrls.operatorJsUrl} />
+              <CopyCard label="Operator runtime" value={center.operatorUrls.operatorRuntimeUrl} />
             </Card>
           )}
 
@@ -398,10 +405,13 @@ function SelfHostTab({ center }: { center: WidgetConnectionCenterDto }) {
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">White Label / Self-host — готовые конфиги для копирования.</p>
       <CopyCard label="widget.js" value={center.selfHost.widgetJsUrl} />
+      <CopyCard label="operator.js" value={center.selfHost.operatorJsUrl} />
+      <CopyCard label="operator-runtime package" value={center.selfHost.operatorRuntimePackagePath} />
       <CopyCard label="WebSocket endpoint" value={center.selfHost.websocketUrl} />
       <CopyCard label="RTC signaling" value={center.selfHost.rtcSignalingPath} />
       <CopyCard label="Permissions-Policy" value={center.selfHost.permissionsPolicyExample} />
-      <CopyCard label="nginx snippet" value={center.selfHost.nginxSnippet} mono />
+      <CopyCard label="nginx — widget" value={center.selfHost.nginxSnippet} mono />
+      <CopyCard label="nginx — operator" value={center.selfHost.operatorNginxSnippet} mono />
       <CopyCard label="CSP example" value={center.selfHost.cspExample} mono />
     </div>
   );

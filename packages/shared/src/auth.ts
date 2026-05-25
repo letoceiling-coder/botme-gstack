@@ -63,6 +63,8 @@ export interface JwtPayload {
   workspaceId: string;
   role: WorkspaceRole;
   type: 'access';
+  /** Present when session was issued via operator runtime embed token */
+  runtimeTokenId?: string;
 }
 
 export interface RealtimePresenceEvent {

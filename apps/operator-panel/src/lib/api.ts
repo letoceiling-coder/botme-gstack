@@ -26,9 +26,23 @@ export class OperatorWorkspaceError extends Error {
   }
 }
 
+let runtimeAccessToken: string | null = null;
+
+export function getRuntimeAccessToken(): string | null {
+  return runtimeAccessToken;
+}
+
+export function clearRuntimeAccessToken(): void {
+  runtimeAccessToken = null;
+}
+
 function apiBase(): string {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL.replace(/\/$/, '');
   return '';
+}
+
+function resolveRuntimeToken(): string | null {
+  return new URLSearchParams(window.location.search).get('token');
 }
 
 function resolveOperatorKey(explicit?: string | null): string | null {
@@ -36,8 +50,29 @@ function resolveOperatorKey(explicit?: string | null): string | null {
   return new URLSearchParams(window.location.search).get('operatorKey');
 }
 
-export async function fetchMe(): Promise<AuthMeResponse | null> {
-  const res = await fetch(`${apiBase()}/api/auth/me`, { credentials: 'include' });
+function resolveTheme(): string {
+  return new URLSearchParams(window.location.search).get('theme') ?? 'dark';
+}
+
+export function applyOperatorTheme(): void {
+  const theme = resolveTheme();
+  document.documentElement.dataset.botmeTheme = theme;
+  if (theme === 'dark') {
+    document.documentElement.classList.add('op-theme-dark');
+  } else {
+    document.documentElement.classList.remove('op-theme-dark');
+  }
+}
+
+export async function fetchMe(accessToken?: string | null): Promise<AuthMeResponse | null> {
+  const headers: Record<string, string> = {};
+  const token = accessToken ?? runtimeAccessToken;
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${apiBase()}/api/auth/me`, {
+    credentials: token ? 'omit' : 'include',
+    headers,
+  });
   if (res.status === 401) return null;
   if (!res.ok) throw new Error('Не удалось проверить сессию');
   return res.json() as Promise<AuthMeResponse>;
@@ -54,10 +89,12 @@ export async function login(email: string, password: string): Promise<AuthMeResp
     const body = (await res.json().catch(() => null)) as { message?: string } | null;
     throw new Error(body?.message ?? 'Неверный email или пароль');
   }
+  clearRuntimeAccessToken();
   return res.json() as Promise<AuthMeResponse>;
 }
 
 export async function logout(): Promise<void> {
+  clearRuntimeAccessToken();
   await fetch(`${apiBase()}/api/auth/logout`, { method: 'POST', credentials: 'include' });
 }
 
@@ -83,14 +120,46 @@ export async function fetchOperatorInit(operatorKey: string): Promise<OperatorIn
   return res.json() as Promise<OperatorInitResponse>;
 }
 
+export async function exchangeRuntimeToken(
+  token: string,
+  workspaceId?: string | null,
+): Promise<AuthMeResponse> {
+  const res = await fetch(`${apiBase()}/api/public/operator-runtime/session`, {
+    method: 'POST',
+    credentials: 'omit',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token,
+      ...(workspaceId ? { workspaceId } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Недействительный operator token');
+  }
+  const data = (await res.json()) as {
+    accessToken: string;
+    user: AuthMeResponse['user'];
+    workspace: AuthMeResponse['workspace'];
+  };
+  runtimeAccessToken = data.accessToken;
+  return { user: data.user, workspace: data.workspace };
+}
+
 /**
  * Safe operator auth bootstrap:
- * 1. require hydrated session (cookies present)
- * 2. resolve operator key → workspace via public init
- * 3. validate membership
- * 4. switch workspace if needed
+ * 1. runtime token (?token=) for embed/self-host
+ * 2. cookie session + optional operatorKey workspace switch
  */
 export async function bootstrapOperatorSession(operatorKey?: string | null): Promise<AuthMeResponse | null> {
+  applyOperatorTheme();
+
+  const runtimeToken = resolveRuntimeToken();
+  if (runtimeToken && runtimeToken !== 'YOUR_OPERATOR_TOKEN') {
+    const workspaceId = new URLSearchParams(window.location.search).get('workspace');
+    return exchangeRuntimeToken(runtimeToken, workspaceId);
+  }
+
   const key = resolveOperatorKey(operatorKey);
   const session = await fetchMe();
   if (!session) return null;

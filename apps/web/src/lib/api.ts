@@ -361,6 +361,15 @@ export const api = {
       request<import('@botme/shared').WidgetConnectionCenterDto>(`/widgets/${id}/connection-center`),
     health: (id: string) =>
       request<import('@botme/shared').WidgetConnectionHealthDto>(`/widgets/${id}/health`),
+    listOperatorTokens: (id: string) =>
+      request<import('@botme/shared').OperatorRuntimeTokenDto[]>(`/widgets/${id}/operator-tokens`),
+    createOperatorToken: (id: string, body: import('@botme/shared').CreateOperatorRuntimeTokenInput) =>
+      request<import('@botme/shared').OperatorRuntimeTokenDto>(`/widgets/${id}/operator-tokens`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    revokeOperatorToken: (id: string, tokenId: string) =>
+      request<{ ok: boolean }>(`/widgets/${id}/operator-tokens/${tokenId}`, { method: 'DELETE' }),
   },
 
   members: {

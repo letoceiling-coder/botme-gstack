@@ -34,10 +34,14 @@ export default defineConfig({
       input: {
         embed: 'index.html',
         loader: 'loader/loader.ts',
+        operator: 'loader/operator.ts',
       },
       output: {
-        entryFileNames: (chunk) =>
-          chunk.name === 'loader' ? 'operator-panel.js' : 'assets/[name]-[hash].js',
+        entryFileNames: (chunk) => {
+          if (chunk.name === 'loader') return 'operator-panel.js';
+          if (chunk.name === 'operator') return 'operator.js';
+          return 'assets/[name]-[hash].js';
+        },
       },
     },
   },

@@ -40,6 +40,7 @@ import { ActiveCallRegistryService } from './services/active-call-registry.servi
 import { RtcCallRecoveryService } from './services/rtc-call-recovery.service';
 import { RtcDiagnosticsBroadcastService } from './services/rtc-diagnostics-broadcast.service';
 import { OperatorChatService } from './services/operator-chat.service';
+import { PrismaService } from '../../core/prisma/prisma.service';
 import type { RealtimeEventEnvelope } from '@botme/realtime-runtime';
 
 type OperatorSocketData = { user: JwtPayload };
@@ -47,9 +48,7 @@ type OperatorSocketData = { user: JwtPayload };
 @WebSocketGateway({
   namespace: WS_NAMESPACES.operator,
   cors: {
-    origin: process.env['CORS_ORIGINS']?.split(',').map((o) => o.trim()) ?? [
-      'http://localhost:5173',
-    ],
+    origin: true,
     credentials: true,
   },
 })
@@ -74,6 +73,7 @@ export class OperatorGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly recovery: RtcCallRecoveryService,
     private readonly rtcBroadcast: RtcDiagnosticsBroadcastService,
     private readonly operatorChat: OperatorChatService,
+    private readonly prisma: PrismaService,
   ) {}
 
   afterInit(server: Server): void {
@@ -84,7 +84,16 @@ export class OperatorGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     try {
       const origin = client.handshake.headers.origin;
       if (origin && !this.corsOrigins.allowedOrigins.includes(origin)) {
-        throw new UnauthorizedException('Origin not allowed');
+        const token = this.extractToken(client);
+        if (!token) throw new UnauthorizedException('Origin not allowed');
+        const payloadPreview = this.jwt.verify<JwtPayload>(token, {
+          secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+        });
+        if (!payloadPreview.runtimeTokenId) {
+          throw new UnauthorizedException('Origin not allowed');
+        }
+        const allowed = await this.isRuntimeTokenOriginAllowed(payloadPreview.runtimeTokenId, origin);
+        if (!allowed) throw new UnauthorizedException('Origin not allowed');
       }
       const token = this.extractToken(client);
       if (!token) throw new UnauthorizedException();
@@ -404,6 +413,29 @@ export class OperatorGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     if (!cookie) return undefined;
     const match = cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
     return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  }
+
+  private async isRuntimeTokenOriginAllowed(runtimeTokenId: string, origin: string): Promise<boolean> {
+    const row = await this.prisma.client.operatorRuntimeToken.findUnique({
+      where: { id: runtimeTokenId },
+      select: { allowedDomains: true, revokedAt: true, expiresAt: true },
+    });
+    if (!row || row.revokedAt) return false;
+    if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return false;
+    if (row.allowedDomains.length === 0) return true;
+    try {
+      const hostname = new URL(origin).hostname.toLowerCase();
+      return row.allowedDomains.some((pattern) => {
+        const p = pattern.toLowerCase().replace(/^https?:\/\//, '').split('/')[0] ?? pattern;
+        if (p.startsWith('*.')) {
+          const suffix = p.slice(2);
+          return hostname === suffix || hostname.endsWith(`.${suffix}`);
+        }
+        return hostname === p;
+      });
+    } catch {
+      return false;
+    }
   }
 }
 

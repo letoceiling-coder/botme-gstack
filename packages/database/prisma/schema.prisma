@@ -159,6 +159,7 @@ model User {
   auditLogs          AuditLog[]
   createdAssistants  Assistant[]          @relation("AssistantCreator")
   sentInvites        WorkspaceInvite[]      @relation("WorkspaceInvitesSent")
+  operatorRuntimeTokens OperatorRuntimeToken[] @relation("OperatorRuntimeTokensCreated")
 
   @@index([deletedAt])
   @@map("users")
@@ -194,6 +195,7 @@ model Workspace {
   callSessions       CallSession[]
   operatorSessionLocks OperatorSessionLock[]
   workspaceInvites     WorkspaceInvite[]
+  operatorRuntimeTokens OperatorRuntimeToken[]
 
   @@index([deletedAt])
   @@map("workspaces")
@@ -720,10 +722,35 @@ model WidgetInstance {
   domains       WidgetDomain[]
   conversations Conversation[]
   visitorSessions VisitorSession[]
+  operatorRuntimeTokens OperatorRuntimeToken[]
 
   @@index([workspaceId, deletedAt])
   @@index([assistantId])
   @@map("widget_instances")
+}
+
+model OperatorRuntimeToken {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  widgetId       String?
+  name           String
+  tokenHash      String    @unique
+  tokenPrefix    String
+  allowedDomains String[]  @default([])
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  lastUsedAt     DateTime?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  widget    WidgetInstance? @relation(fields: [widgetId], references: [id], onDelete: SetNull)
+  createdBy User            @relation("OperatorRuntimeTokensCreated", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([widgetId])
+  @@map("operator_runtime_tokens")
 }
 
 model WidgetDomain {

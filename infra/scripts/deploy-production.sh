@@ -7,7 +7,7 @@ SERVER="${DEPLOY_SERVER:-root@212.67.9.173}"
 REMOTE="${DEPLOY_REMOTE:-/var/www/agent.neeklo.ru}"
 SSH_KEY="${DEPLOY_SSH_KEY:-$HOME/.ssh/id_ed25519_beget}"
 RSYNC_SSH="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=accept-new"
-RELEASE_VERSION="${RELEASE_VERSION:-M11.7B}"
+RELEASE_VERSION="${RELEASE_VERSION:-M11.8}"
 
 cd "$ROOT"
 chmod +x infra/scripts/*.sh 2>/dev/null || true

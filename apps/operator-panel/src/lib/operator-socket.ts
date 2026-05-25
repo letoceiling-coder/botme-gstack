@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import type { LiveVisitorDto, WidgetMessageDto } from '@botme/shared';
 import { WS_NAMESPACES } from '@botme/shared';
+import { getRuntimeAccessToken } from './api';
 
 function wsBase(): string {
   if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL.replace(/\/$/, '');
@@ -36,12 +37,15 @@ export interface OperatorSocketHandle {
 }
 
 export function connectOperatorSocket(handlers: OperatorSocketHandlers): OperatorSocketHandle {
+  const accessToken = getRuntimeAccessToken();
   const socket: Socket = io(`${wsBase()}${WS_NAMESPACES.operator}`, {
-    withCredentials: true,
+    withCredentials: !accessToken,
+    auth: accessToken ? { token: accessToken } : undefined,
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
+    reconnectionDelayMax: 8000,
   });
 
   handlers.onConnection('connecting');
