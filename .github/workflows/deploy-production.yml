@@ -1,0 +1,63 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version label (e.g. M11.7B)'
+        required: false
+        default: 'M11.7B'
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  ci-gate:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST || '212.67.9.173' }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Production deploy
+        env:
+          DEPLOY_SERVER: root@${{ secrets.DEPLOY_HOST || '212.67.9.173' }}
+          DEPLOY_SSH_KEY: ~/.ssh/deploy_key
+          RELEASE_VERSION: ${{ github.event.inputs.release_version || 'M11.7B' }}
+          DEPLOYED_BY: github-actions
+        run: |
+          chmod +x infra/scripts/*.sh
+          bash infra/scripts/deploy-production.sh
+
+      - name: Upload release.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-json
+          path: release.json

@@ -9,6 +9,7 @@ REMOTE="${DEPLOY_REMOTE:-/var/www/agent.neeklo.ru}"
 SKIP_BACKUP="${SKIP_BACKUP:-0}"
 
 echo "==> Preflight: scan for forbidden destructive patterns"
+FORBIDDEN_PATTERN='migrate reset|migrate:reset|db:push|force-reset|TRUNCATE'
 if command -v rg >/dev/null 2>&1; then
   if rg -i "$FORBIDDEN_PATTERN" infra/scripts/deploy-production.sh infra/scripts/deploy-demo.sh 2>/dev/null; then
     echo "PREFLIGHT_FAIL: destructive pattern found in deploy scripts"
