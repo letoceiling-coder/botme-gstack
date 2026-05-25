@@ -1,6 +1,4 @@
--- M11.7: OPERATOR role + workspace invites
-ALTER TYPE "WorkspaceRole" ADD VALUE IF NOT EXISTS 'OPERATOR';
-
+-- Workspace invites (depends on OPERATOR enum from previous migration)
 CREATE TABLE "workspace_invites" (
     "id" TEXT NOT NULL,
     "workspaceId" TEXT NOT NULL,
