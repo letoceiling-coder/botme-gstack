@@ -55,6 +55,7 @@ const DENTAL_LAUNCHER = {
   iframeWidth: 400,
   iframeHeight: 560,
   animations: true,
+  quickActions: ['Цены', 'Консультация', 'Имплантация', 'Виниры', 'Запись', 'Связаться с врачом'],
 };
 
 const SYSTEM_PROMPT = `Вы — премиальный AI-ассистент стоматологической клиники Neeklo Dental (Москва).

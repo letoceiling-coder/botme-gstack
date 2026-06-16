@@ -1,8 +1,35 @@
 import { z } from 'zod';
 
+/** Preset OpenRouter failover chain: free → cheap OpenAI → DeepSeek → Qwen */
+export const OPENROUTER_DEFAULT_MODEL_CHAIN = [
+  'openrouter/free',
+  'openai/gpt-4o-mini',
+  'deepseek/deepseek-chat-v3-0324',
+  'qwen/qwen-2.5-7b-instruct',
+] as const;
+
+export const IntegrationModelChainItemSchema = z.object({
+  modelId: z.string().min(1, 'Укажите model id').max(200),
+  enabled: z.boolean().optional(),
+  maxRetries: z.number().int().min(0).max(10).optional(),
+  timeoutMs: z.number().int().min(1000).max(600_000).optional(),
+});
+
+export type IntegrationModelChainItemInput = z.infer<typeof IntegrationModelChainItemSchema>;
+
+export interface IntegrationModelChainItemDto {
+  position: number;
+  modelId: string;
+  enabled: boolean;
+  maxRetries: number;
+  timeoutMs: number;
+}
+
 const BaseIntegrationSchema = z.object({
   name: z.string().min(1, 'Укажите название').max(120),
   isDefault: z.boolean().optional(),
+  /** Пустой массив или отсутствие = любая доступная модель при failover */
+  modelChain: z.array(IntegrationModelChainItemSchema).max(20).optional(),
 });
 
 export const CreateIntegrationSchema = z.discriminatedUnion('provider', [
@@ -29,6 +56,7 @@ export const UpdateIntegrationSchema = z.object({
   isDefault: z.boolean().optional(),
   apiKey: z.string().min(8).max(512).optional(),
   status: z.enum(['ACTIVE', 'INVALID', 'DISABLED', 'PENDING_VALIDATION']).optional(),
+  modelChain: z.array(IntegrationModelChainItemSchema).max(20).optional(),
 });
 
 export type UpdateIntegrationInput = z.infer<typeof UpdateIntegrationSchema>;
@@ -42,6 +70,7 @@ export interface IntegrationDto {
   status: string;
   lastValidatedAt: string | null;
   modelCount: number;
+  modelChain: IntegrationModelChainItemDto[];
   createdAt: string;
   updatedAt: string;
 }

@@ -29,7 +29,7 @@ export function AssistantsPage() {
     agentId: '',
     kbIds: [] as string[],
     toolIds: [] as string[],
-    isActive: false,
+    isActive: true,
     runtime: {
       maxContextMessages: 20,
       memoryEnabled: true,
@@ -78,6 +78,14 @@ export function AssistantsPage() {
       setStep(0);
       setDraftId(null);
     },
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: (assistantId: string) => api.assistants.update(assistantId, { isActive: true, status: 'ACTIVE' }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['assistants'] });
+    },
+    onError: (err: unknown) => setError(err instanceof ApiError ? err.message : ru.common.error),
   });
 
   const toggleKb = (id: string) => {
@@ -146,7 +154,10 @@ export function AssistantsPage() {
                       {a.isActive ? (
                         <Badge variant="success">{ru.assistants.active}</Badge>
                       ) : (
-                        <Badge variant="muted">Черновик</Badge>
+                        <div className="space-y-1">
+                          <Badge variant="warning">Черновик</Badge>
+                          <p className="text-xs text-amber-200/80">Пока не работает в виджете</p>
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -166,6 +177,15 @@ export function AssistantsPage() {
                             {ru.assistants.runtime}
                           </Button>
                         </Link>
+                        {!a.isActive && (
+                          <Button
+                            className="text-xs"
+                            loading={publishMutation.isPending}
+                            onClick={() => publishMutation.mutate(a.id)}
+                          >
+                            Опубликовать
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -273,8 +293,11 @@ export function AssistantsPage() {
                     </label>
                     <label className="flex items-center gap-2 text-sm text-zinc-300">
                       <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />
-                      {ru.assistants.activate}
+                      Опубликовать сразу (рекомендуется для виджета)
                     </label>
+                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
+                      Если ассистент оставить черновиком, публичный виджет не сможет запуститься и посетитель увидит ошибку.
+                    </p>
                   </div>
                 )}
                 {step === 5 && (

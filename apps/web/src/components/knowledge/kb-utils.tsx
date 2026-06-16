@@ -65,6 +65,12 @@ export function formatDocErrorMessage(message: string | null | undefined): strin
   if (lower.includes('root openrouter')) {
     return 'Нет активной OpenRouter-интеграции для embeddings';
   }
+  if (lower.includes('contenthash') || lower.includes('unique constraint')) {
+    return 'Ошибка нарезки документа — нажмите «Повтор»';
+  }
+  if (lower.includes('документ с таким содержимым')) {
+    return 'Этот файл уже загружен в базу знаний';
+  }
   return message;
 }
 

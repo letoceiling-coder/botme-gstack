@@ -8,7 +8,7 @@ import { PrismaService } from '../../../core/prisma/prisma.service';
 
 export type WidgetWithRelations = WidgetInstance & {
   domains: { domain: string }[];
-  assistant: { id: string; name: string };
+  assistant: { id: string; name: string; status: string; isActive: boolean };
   _count?: { conversations: number };
 };
 
@@ -23,7 +23,7 @@ export class WidgetAdminRepository extends WorkspaceScopedRepository {
       where: this.activeScope(workspaceId),
       include: {
         domains: true,
-        assistant: { select: { id: true, name: true } },
+        assistant: { select: { id: true, name: true, status: true, isActive: true } },
         _count: { select: { conversations: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -35,7 +35,7 @@ export class WidgetAdminRepository extends WorkspaceScopedRepository {
       where: { ...this.activeScope(workspaceId), id },
       include: {
         domains: true,
-        assistant: { select: { id: true, name: true } },
+        assistant: { select: { id: true, name: true, status: true, isActive: true } },
         _count: { select: { conversations: true } },
       },
     });
@@ -46,7 +46,7 @@ export class WidgetAdminRepository extends WorkspaceScopedRepository {
       data,
       include: {
         domains: true,
-        assistant: { select: { id: true, name: true } },
+        assistant: { select: { id: true, name: true, status: true, isActive: true } },
         _count: { select: { conversations: true } },
       },
     });
@@ -62,7 +62,7 @@ export class WidgetAdminRepository extends WorkspaceScopedRepository {
       data,
       include: {
         domains: true,
-        assistant: { select: { id: true, name: true } },
+        assistant: { select: { id: true, name: true, status: true, isActive: true } },
         _count: { select: { conversations: true } },
       },
     });
@@ -88,6 +88,13 @@ export class WidgetAdminRepository extends WorkspaceScopedRepository {
     });
   }
 
+  async publishAssistant(assistantId: string): Promise<void> {
+    await this.prisma.client.assistant.update({
+      where: { id: assistantId },
+      data: { isActive: true, status: 'ACTIVE' },
+    });
+  }
+
   generatePublicKey(): string {
     return `wm_${randomBytes(16).toString('hex')}`;
   }
@@ -107,6 +114,8 @@ export function toWidgetDto(row: WidgetWithRelations, embedOrigin = 'https://age
     publicKey: row.publicKey,
     assistantId: row.assistantId,
     assistantName: row.assistant.name,
+    assistantStatus: row.assistant.status,
+    assistantIsActive: row.assistant.isActive,
     isActive: row.isActive,
     domains: row.domains.map((d) => d.domain),
     launcherConfig: (row.launcherConfig as LauncherConfig | null) ?? null,

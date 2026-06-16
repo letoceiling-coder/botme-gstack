@@ -20,6 +20,7 @@ import {
   OperatorSelfHostController,
 } from './presentation/operator-runtime-token.controller';
 import { OperatorRuntimePublicController } from './presentation/operator-runtime-public.controller';
+import { S3StorageService } from '../../core/storage/s3-storage.service';
 
 @Module({
   imports: [FoundationModule, AssistantModule, RealtimeModule, JwtModule.register({})],
@@ -41,6 +42,7 @@ import { OperatorRuntimePublicController } from './presentation/operator-runtime
     WidgetConnectionHealthService,
     WidgetConnectionCenterService,
     WidgetAdminRepository,
+    S3StorageService,
   ],
   exports: [WidgetAdminService, WidgetAdminRepository, OperatorRuntimeTokenService],
 })

@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Headphones, Loader2, Plus, Trash2, X } from 'lucide-react';
-import { useState } from 'react';
-import type { AssistantDto, WidgetDto, WidgetConnectionCenterDto, WidgetDetailDto } from '@botme/shared';
+import { useEffect, useState } from 'react';
+import {
+  DEFAULT_LAUNCHER_CONFIG,
+  type AssistantDto,
+  type LauncherConfig,
+  type WidgetDto,
+  type WidgetConnectionCenterDto,
+  type WidgetDetailDto,
+} from '@botme/shared';
 import { Badge, Button, Card, Input, Select, SelectOption } from '@botme/ui';
 import { api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
@@ -10,8 +17,19 @@ import { BrowserDiagnosticsPanel, ServerHealthList } from '@/components/widgets/
 import { HealthStatusChip } from '@/components/widgets/health-status-chip';
 import { WidgetOperatorsPanel } from '@/components/widgets/widget-operators-panel';
 import { WidgetOperatorEmbedPanel } from '@/components/widgets/widget-operator-embed-panel';
+import { WidgetStyleEditor } from '@/components/widgets/widget-style-editor';
 
 type SetupTab = 'widget' | 'operator' | 'operators' | 'rtc' | 'diagnostics' | 'selfhost';
+
+function widgetReadinessIssues(widget: WidgetDetailDto): string[] {
+  const issues: string[] = [];
+  if (!widget.isActive) issues.push('Виджет выключен');
+  if (!widget.assistantIsActive || widget.assistantStatus !== 'ACTIVE') {
+    issues.push('Ассистент в черновике или не опубликован');
+  }
+  if (widget.domains.length === 0) issues.push('Не настроены разрешённые домены');
+  return issues;
+}
 
 export function WidgetsPage() {
   const role = useAuthStore((s) => s.session?.workspace.role);
@@ -23,6 +41,8 @@ export function WidgetsPage() {
   const [tab, setTab] = useState<SetupTab>('widget');
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', assistantId: '', domains: '' });
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  const [setupWizardDismissedFor, setSetupWizardDismissedFor] = useState<string | null>(null);
 
   const widgetsQuery = useQuery({ queryKey: ['widgets'], queryFn: () => api.widgets.list() });
   const assistantsQuery = useQuery({ queryKey: ['assistants'], queryFn: () => api.assistants.list(), enabled: modalOpen });
@@ -57,6 +77,8 @@ export function WidgetsPage() {
       setSelectedId(data.id);
       setModalOpen(false);
       setForm({ name: '', assistantId: '', domains: '' });
+      setSetupWizardOpen(true);
+      setSetupWizardDismissedFor(null);
       setError(null);
     },
     onError: (err: unknown) => setError(err instanceof ApiError ? err.message : 'Ошибка'),
@@ -83,6 +105,36 @@ export function WidgetsPage() {
   const selected = detailQuery.data;
   const center = centerQuery.data;
   const assistants = assistantsQuery.data ?? [];
+  const readinessIssues = selected ? widgetReadinessIssues(selected) : [];
+
+  useEffect(() => {
+    if (!selected || readinessIssues.length === 0 || setupWizardDismissedFor === selected.id) return;
+    setSetupWizardOpen(true);
+  }, [
+    selected?.id,
+    selected?.isActive,
+    selected?.assistantIsActive,
+    selected?.assistantStatus,
+    selected?.domains.length,
+    readinessIssues.length,
+    setupWizardDismissedFor,
+  ]);
+
+  const fixSetupMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected) return;
+      await api.assistants.update(selected.assistantId, { isActive: true, status: 'ACTIVE' });
+      await api.widgets.update(selected.id, { isActive: true });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['widgets'] });
+      await queryClient.invalidateQueries({ queryKey: ['widgets', selectedId] });
+      await queryClient.invalidateQueries({ queryKey: ['widgets', selectedId, 'connection-center'] });
+      setSetupWizardOpen(false);
+      setSetupWizardDismissedFor(null);
+    },
+    onError: (err: unknown) => setError(err instanceof ApiError ? err.message : 'Ошибка настройки виджета'),
+  });
 
   const tabs: { id: SetupTab; label: string }[] = [
     { id: 'widget', label: 'Виджет' },
@@ -173,6 +225,7 @@ export function WidgetsPage() {
                   canMutate={canMutate}
                   onToggle={() => toggleMutation.mutate({ id: selected.id, isActive: !selected.isActive })}
                   onDelete={() => deleteMutation.mutate(selected.id)}
+                  onOpenSetupWizard={() => setSetupWizardOpen(true)}
                 />
               )}
 
@@ -277,10 +330,13 @@ export function WidgetsPage() {
               </Select>
               <textarea
                 className="min-h-[80px] w-full rounded-lg border border-border bg-background p-3 text-sm"
-                placeholder="Домены (по одному на строку)"
+                placeholder={'example.com\nwww.example.com'}
                 value={form.domains}
                 onChange={(e) => setForm((f) => ({ ...f, domains: e.target.value }))}
               />
+              <p className="text-xs text-muted-foreground">
+                Указывайте домены без <code>https://</code>. После создания откроется мастер с готовым скриптом.
+              </p>
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button
                 className="w-full"
@@ -289,6 +345,82 @@ export function WidgetsPage() {
               >
                 {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Создать
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {selected && setupWizardOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <Card className="w-full max-w-xl space-y-5 p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-primary">Мастер запуска</p>
+                <h2 className="mt-1 text-lg font-semibold">Подготовить виджет к установке</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  После этих шагов пользователь копирует скрипт, вставляет на сайт перед <code>&lt;/body&gt;</code>, и виджет работает.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSetupWizardOpen(false);
+                  setSetupWizardDismissedFor(selected.id);
+                }}
+              >
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {[
+                { label: 'Виджет включён', ok: selected.isActive },
+                { label: 'Ассистент опубликован', ok: selected.assistantIsActive && selected.assistantStatus === 'ACTIVE' },
+                { label: 'Домены указаны', ok: selected.domains.length > 0 },
+              ].map((item, index) => (
+                <div key={item.label} className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/10 p-3">
+                  <span
+                    className={`grid h-7 w-7 place-items-center rounded-full text-xs font-semibold ${
+                      item.ok ? 'bg-primary/20 text-primary' : 'bg-amber-500/20 text-amber-200'
+                    }`}
+                  >
+                    {item.ok ? '✓' : index + 1}
+                  </span>
+                  <span className={item.ok ? 'text-foreground' : 'text-amber-100'}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {selected.domains.length === 0 && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                Сначала добавьте домен сайта в настройках виджета. Без домена публичный <code>widget.js</code> будет отклонён защитой.
+              </div>
+            )}
+
+            <CopyCard
+              label="Готовый скрипт"
+              value={center?.embedCode ?? selected.embedCode}
+              prominent
+              hint="Вставьте код перед закрывающим тегом </body> на сайте."
+            />
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSetupWizardOpen(false);
+                  setSetupWizardDismissedFor(selected.id);
+                }}
+              >
+                Закрыть
+              </Button>
+              <Button
+                disabled={selected.domains.length === 0}
+                loading={fixSetupMutation.isPending}
+                onClick={() => fixSetupMutation.mutate()}
+              >
+                Исправить и опубликовать
               </Button>
             </div>
           </Card>
@@ -304,15 +436,48 @@ function WidgetSetupTab({
   canMutate,
   onToggle,
   onDelete,
+  onOpenSetupWizard,
 }: {
   selected: WidgetDetailDto;
   center: WidgetConnectionCenterDto;
   canMutate: boolean;
   onToggle: () => void;
   onDelete: () => void;
+  onOpenSetupWizard: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const [launcher, setLauncher] = useState<LauncherConfig>({
+    ...DEFAULT_LAUNCHER_CONFIG,
+    ...(selected.launcherConfig ?? {}),
+  });
+
+  useEffect(() => {
+    setLauncher({ ...DEFAULT_LAUNCHER_CONFIG, ...(selected.launcherConfig ?? {}) });
+  }, [selected.id, selected.updatedAt, selected.launcherConfig]);
+
+  const saveStyleMutation = useMutation({
+    mutationFn: () => api.widgets.update(selected.id, { launcherConfig: launcher }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['widgets'] });
+      await queryClient.invalidateQueries({ queryKey: ['widgets', selected.id] });
+      await queryClient.invalidateQueries({ queryKey: ['widgets', selected.id, 'preview-session'] });
+    },
+  });
+
   return (
     <div className="space-y-4">
+      {widgetReadinessIssues(selected).length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/10 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium text-amber-100">Виджет ещё не готов к установке</p>
+              <p className="mt-1 text-sm text-amber-100/80">{widgetReadinessIssues(selected).join(' · ')}</p>
+            </div>
+            <Button onClick={onOpenSetupWizard}>Открыть мастер</Button>
+          </div>
+        </Card>
+      )}
+
       <Card className="space-y-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-medium">{selected.name}</h2>
@@ -354,6 +519,20 @@ function WidgetSetupTab({
         </ol>
         <CopyCard label="Embed code — виджет" value={center.embedCode} prominent hint="Готово к использованию" />
       </div>
+
+      <Card className="space-y-4 p-4">
+        <WidgetStyleEditor
+          value={launcher}
+          disabled={!canMutate}
+          onChange={setLauncher}
+          onUploadLauncherIcon={(file) => api.widgets.uploadLauncherIcon(selected.id, file).then((res) => res.url)}
+        />
+        {canMutate && (
+          <Button loading={saveStyleMutation.isPending} onClick={() => saveStyleMutation.mutate()} className="gap-2">
+            Сохранить дизайн виджета
+          </Button>
+        )}
+      </Card>
 
       <div>
         <p className="mb-2 text-sm font-medium">Разрешённые домены</p>

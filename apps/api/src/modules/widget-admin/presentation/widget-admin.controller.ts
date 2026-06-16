@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from '../../../core/decorators/roles.decorator';
 import { CurrentUser } from '../../../core/decorators/current-user.decorator';
 import type { AuthenticatedRequest } from '../../../core/decorators/current-user.decorator';
@@ -65,6 +66,20 @@ export class WidgetAdminController {
     @Body() body: unknown,
   ) {
     return this.widgets.update(user.workspaceId, id, body);
+  }
+
+  @Post(':id/launcher-icon')
+  @Roles('ADMIN')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 256 * 1024 } }))
+  uploadLauncherIcon(
+    @CurrentUser() user: AuthenticatedRequest['user'],
+    @Param('id') id: string,
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype?: string; size: number },
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Файл не передан');
+    }
+    return this.widgets.uploadLauncherIcon(user.workspaceId, id, file);
   }
 
   @Put(':id/domains')

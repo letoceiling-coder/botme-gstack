@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { IntegrationDto, ModelCacheDto } from '@botme/shared';
 import { Badge, Button, Input, Select, SelectOption } from '@botme/ui';
 import { api } from '@/lib/api';
+import { modelsForIntegrationPicker } from '@/lib/integration-model-chain';
 import { useQuery } from '@tanstack/react-query';
 
 export type FallbackFormRow = {
@@ -37,15 +38,18 @@ export function AgentFallbackChainEditor({
     enabled: !!pickIntegrationId,
   });
 
+  const pickIntegration = integrations.find((i) => i.id === pickIntegrationId);
+
   const filteredModels = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (modelsQuery.data ?? []).filter(
+    const pool = modelsForIntegrationPicker(pickIntegration, modelsQuery.data ?? []);
+    return pool.filter(
       (m: ModelCacheDto) =>
         !q ||
         m.displayName.toLowerCase().includes(q) ||
         m.externalId.toLowerCase().includes(q),
     );
-  }, [modelsQuery.data, search]);
+  }, [modelsQuery.data, search, pickIntegration]);
 
   const addModel = (m: ModelCacheDto) => {
     const key = `${pickIntegrationId}:${m.externalId}`;

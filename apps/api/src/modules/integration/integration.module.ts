@@ -3,13 +3,24 @@ import { AuthModule } from '../auth/auth.module';
 import { FoundationModule } from '../foundation/foundation.module';
 import { IntegrationService } from './application/integration.service';
 import { ModelSyncService } from './application/model-sync.service';
+import { IntegrationModelChainRepository } from './infrastructure/integration-model-chain.repository';
 import { ModelCacheRepository } from './infrastructure/model-cache.repository';
 import { IntegrationController } from './presentation/integration.controller';
 
 @Module({
   imports: [AuthModule, FoundationModule],
   controllers: [IntegrationController],
-  providers: [IntegrationService, ModelSyncService, ModelCacheRepository],
-  exports: [IntegrationService, ModelSyncService, ModelCacheRepository],
+  providers: [
+    IntegrationService,
+    ModelSyncService,
+    ModelCacheRepository,
+    IntegrationModelChainRepository,
+  ],
+  exports: [
+    IntegrationService,
+    ModelSyncService,
+    ModelCacheRepository,
+    IntegrationModelChainRepository,
+  ],
 })
 export class IntegrationModule {}

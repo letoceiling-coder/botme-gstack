@@ -29,6 +29,7 @@ import { WidgetChatService } from '../widget-chat/application/widget-chat.servic
 import { RealtimeRuntimeService } from './services/realtime-runtime.service';
 import { LiveVisitorTrackerService } from './services/live-visitor-tracker.service';
 import { WidgetSocketBridge } from './services/widget-socket-bridge.service';
+import { OperatorSocketBridge } from './services/operator-socket-bridge.service';
 import { WebRtcSignalService } from './services/webrtc-signal.service';
 import { RtcSignalRelayService } from './services/rtc-signal-relay.service';
 import { ActiveCallRegistryService } from './services/active-call-registry.service';
@@ -62,6 +63,7 @@ export class WidgetGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     private readonly runtime: RealtimeRuntimeService,
     private readonly visitors: LiveVisitorTrackerService,
     private readonly bridge: WidgetSocketBridge,
+    private readonly operatorBridge: OperatorSocketBridge,
     private readonly webrtc: WebRtcSignalService,
     private readonly signalRelay: RtcSignalRelayService,
     private readonly callRegistry: ActiveCallRegistryService,
@@ -375,7 +377,23 @@ export class WidgetGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   async handleCallEnd(client: Socket, payload: unknown): Promise<{ ok: boolean }> {
     const ctx = client.data as WidgetSocketData;
     const input = WebRtcCallEndSchema.parse(payload);
-    await this.callRegistry.endCall(input.callSessionId, input.reason ?? 'ENDED');
+    const entry = await this.callRegistry.get(input.callSessionId);
+    await this.callRegistry.endCall(input.callSessionId, input.reason === 'FAILED' ? 'FAILED' : 'ENDED');
+    if (entry?.visitorSessionId) {
+      await this.visitors.setControlMode(
+        ctx.workspaceId,
+        entry.visitorSessionId,
+        entry.operatorId ? 'OPERATOR' : 'AI',
+      );
+    }
+    this.operatorBridge.emitToCallRoom(
+      input.callSessionId,
+      client.id,
+      this.runtime,
+      ctx.workspaceId,
+      'webrtc:call-end',
+      { type: 'webrtc:call-end', callSessionId: input.callSessionId, reason: input.reason ?? 'ENDED' },
+    );
     void this.rtcBroadcast.broadcastNow(ctx.workspaceId);
     return { ok: true };
   }

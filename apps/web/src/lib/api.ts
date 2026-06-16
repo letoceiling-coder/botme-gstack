@@ -127,7 +127,7 @@ export const api = {
     list: () => request<IntegrationDto[]>('/integrations'),
     create: (body: import('@botme/shared').CreateIntegrationInput) =>
       request<IntegrationDto>('/integrations', { method: 'POST', body: JSON.stringify(body) }),
-    update: (id: string, body: { name?: string; isDefault?: boolean; apiKey?: string }) =>
+    update: (id: string, body: import('@botme/shared').UpdateIntegrationInput) =>
       request<IntegrationDto>(`/integrations/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     remove: (id: string) =>
       request<{ ok: boolean }>(`/integrations/${id}`, { method: 'DELETE' }),
@@ -349,6 +349,11 @@ export const api = {
       request<import('@botme/shared').WidgetDetailDto>('/widgets', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: import('@botme/shared').UpdateWidgetInput) =>
       request<import('@botme/shared').WidgetDetailDto>(`/widgets/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    uploadLauncherIcon: (id: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return request<{ url: string }>(`/widgets/${id}/launcher-icon`, { method: 'POST', body: form });
+    },
     updateDomains: (id: string, domains: string[]) =>
       request<import('@botme/shared').WidgetDetailDto>(`/widgets/${id}/domains`, {
         method: 'PUT',

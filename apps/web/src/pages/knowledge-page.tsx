@@ -223,7 +223,13 @@ export function KnowledgePage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['kb-documents', selectedKbId] });
     },
-    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : ru.common.error),
+    onError: (e: unknown) => {
+      if (e instanceof Error && e.message === 'Неподдерживаемый формат файла') {
+        setError('Неподдерживаемый формат. Допустимо: txt, md, pdf, docx, csv, xlsx, html, json');
+        return;
+      }
+      setError(e instanceof ApiError ? e.message : ru.common.error);
+    },
   });
 
   const addUrl = useMutation({

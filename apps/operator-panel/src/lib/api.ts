@@ -19,6 +19,11 @@ export interface OperatorInitResponse {
   panelOrigin?: string;
 }
 
+export interface WidgetSummary {
+  id: string;
+  name: string;
+}
+
 export class OperatorWorkspaceError extends Error {
   constructor(message: string) {
     super(message);
@@ -64,9 +69,16 @@ export function applyOperatorTheme(): void {
   }
 }
 
-export async function fetchMe(accessToken?: string | null): Promise<AuthMeResponse | null> {
+function authFetchHeaders(): { headers: Record<string, string>; credentials: RequestCredentials } {
   const headers: Record<string, string> = {};
+  const token = runtimeAccessToken;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return { headers, credentials: token ? 'omit' : 'include' };
+}
+
+export async function fetchMe(accessToken?: string | null): Promise<AuthMeResponse | null> {
   const token = accessToken ?? runtimeAccessToken;
+  const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${apiBase()}/api/auth/me`, {
@@ -76,6 +88,14 @@ export async function fetchMe(accessToken?: string | null): Promise<AuthMeRespon
   if (res.status === 401) return null;
   if (!res.ok) throw new Error('Не удалось проверить сессию');
   return res.json() as Promise<AuthMeResponse>;
+}
+
+export async function fetchWidgets(): Promise<WidgetSummary[]> {
+  const { headers, credentials } = authFetchHeaders();
+  const res = await fetch(`${apiBase()}/api/widgets`, { credentials, headers });
+  if (!res.ok) return [];
+  const data = (await res.json()) as WidgetSummary[];
+  return data.map((w) => ({ id: w.id, name: w.name }));
 }
 
 export async function login(email: string, password: string): Promise<AuthMeResponse> {

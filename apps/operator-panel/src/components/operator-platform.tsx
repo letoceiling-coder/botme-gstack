@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { LiveVisitorDto, WidgetMessageDto } from '@botme/shared';
-import type { AuthMeResponse } from '../lib/api';
+import type { AuthMeResponse, WidgetSummary } from '../lib/api';
 import {
   connectOperatorSocket,
   emitEnableCallControls,
@@ -28,7 +28,8 @@ import {
 } from '../lib/operator-rtc-session';
 import { storeOperatorRecovery, clearOperatorRecovery } from '../lib/call-recovery-storage';
 import { controlModeLabel, formatDuration } from '../lib/operator-labels';
-import { switchWorkspace } from '../lib/api';
+import { switchWorkspace, fetchWidgets } from '../lib/api';
+import { countVisitorsByWidget, widgetNameById } from '../lib/widget-labels';
 import { opRu } from '../i18n/ru';
 
 type ChatLine = WidgetMessageDto & { system?: boolean; label?: string };
@@ -72,6 +73,8 @@ export function OperatorPlatform({ session }: Props) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
+  const [widgets, setWidgets] = useState<WidgetSummary[]>([]);
+  const [widgetFilter, setWidgetFilter] = useState<'all' | string>('all');
 
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [pendingOffer, setPendingOffer] = useState<{ callSessionId: string; sdp: string; inviteType: 'VOICE' | 'VIDEO' } | null>(null);
@@ -121,16 +124,29 @@ export function OperatorPlatform({ session }: Props) {
     }
   }, [selected?.conversationId]);
 
+  useEffect(() => {
+    void fetchWidgets().then(setWidgets).catch(() => undefined);
+  }, [session.workspace.id]);
+
+  const visitorCountsByWidget = useMemo(() => countVisitorsByWidget(visitors), [visitors]);
+
+  const resolveWidgetName = useCallback(
+    (widgetId: string) => widgetNameById(widgets, widgetId, opRu.widgetUnknown),
+    [widgets],
+  );
+
   const filteredVisitors = useMemo(() => {
+    let list =
+      widgetFilter === 'all' ? visitors : visitors.filter((v) => v.widgetId === widgetFilter);
     const q = search.trim().toLowerCase();
-    if (!q) return visitors;
-    return visitors.filter(
+    if (!q) return list;
+    return list.filter(
       (v) =>
         v.visitorId.toLowerCase().includes(q) ||
-        (v.currentPage ?? '').toLowerCase().includes(q) ||
+        resolveWidgetName(v.widgetId).toLowerCase().includes(q) ||
         (v.deviceSummary ?? '').toLowerCase().includes(q),
     );
-  }, [visitors, search]);
+  }, [visitors, search, widgetFilter, resolveWidgetName]);
 
   useEffect(() => {
     activeCallRef.current = activeCall;
@@ -550,6 +566,32 @@ export function OperatorPlatform({ session }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {widgets.length > 0 && (
+            <div className="op-widget-filter" role="group" aria-label={opRu.filterWidget}>
+              <button
+                type="button"
+                className={`op-widget-filter-btn ${widgetFilter === 'all' ? 'is-active' : ''}`}
+                onClick={() => setWidgetFilter('all')}
+              >
+                {opRu.filterAll}
+                <span className="op-widget-filter-count">{visitors.length}</span>
+              </button>
+              {widgets.map((w) => {
+                const count = visitorCountsByWidget.get(w.id) ?? 0;
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    className={`op-widget-filter-btn ${widgetFilter === w.id ? 'is-active' : ''}`}
+                    onClick={() => setWidgetFilter(w.id)}
+                  >
+                    {w.name}
+                    <span className="op-widget-filter-count">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {activeCall && (
             <div className="op-active-call-chip">
               {opRu.callActive} · {callState}
@@ -576,7 +618,10 @@ export function OperatorPlatform({ session }: Props) {
                     </span>
                   </div>
                   <p className="op-visitor-meta">{controlModeLabel(v.controlMode)}</p>
-                  <p className="op-visitor-meta">{v.currentPage ?? '—'}</p>
+                  <span className="op-widget-badge">{resolveWidgetName(v.widgetId)}</span>
+                  {v.deviceSummary ? (
+                    <p className="op-visitor-meta">{v.deviceSummary}</p>
+                  ) : null}
                 </button>
               </li>
             ))}
@@ -590,8 +635,16 @@ export function OperatorPlatform({ session }: Props) {
             <>
               <div className="op-chat-head">
                 <div>
-                  <h2>{opRu.visitor} {selected.visitorId.slice(0, 12)}</h2>
+                  <div className="op-chat-head-title">
+                    <h2>
+                      {opRu.visitor} {selected.visitorId.slice(0, 12)}
+                    </h2>
+                    <span className="op-widget-badge">{resolveWidgetName(selected.widgetId)}</span>
+                  </div>
                   <p>{controlModeLabel(selected.controlMode)}</p>
+                  {selected.deviceSummary ? (
+                    <p className="op-chat-head-meta">{selected.deviceSummary}</p>
+                  ) : null}
                 </div>
                 <div className="op-chat-actions">
                   <button type="button" onClick={takeover}>

@@ -191,9 +191,12 @@ export class RtcRuntime {
       this.cancelMediaVerify();
     } else if (payload.type === 'offer' && payload.sdp) {
       const pc = this.pcManager.peerConnection;
-      // Ignore duplicate early offer replays once we already applied one.
-      if (pc?.remoteDescription?.type === 'offer' && pc.signalingState === 'stable') {
-        return;
+      // Ignore duplicate offer replays (stored-offer replay after accept, etc.).
+      if (pc?.remoteDescription?.type === 'offer') {
+        const state = pc.signalingState;
+        if (state === 'stable' || state === 'have-local-offer' || state === 'have-remote-offer') {
+          return;
+        }
       }
       await this.pcManager.applyRemoteOffer(payload.sdp);
       const answer = await this.pcManager.createAnswer();

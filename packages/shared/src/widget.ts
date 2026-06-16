@@ -49,6 +49,7 @@ export interface WidgetPublicInitDto {
   publicKey: string;
   widgetOrigin: string;
   embedPath: string;
+  assetVersion: string;
   theme: import('./widget-theme.js').WidgetThemeConfig;
   assistant: {
     name: string;

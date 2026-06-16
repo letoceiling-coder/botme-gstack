@@ -38,6 +38,7 @@ export class WidgetPublicService {
       publicKey: widget.publicKey,
       widgetOrigin,
       embedPath: '/widget/',
+      assetVersion: widget.updatedAt.getTime().toString(36),
       theme,
       assistant: {
         name: widget.assistant.name,

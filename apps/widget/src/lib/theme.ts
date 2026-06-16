@@ -7,10 +7,13 @@ export function applyWidgetTheme(theme: WidgetThemeConfig): void {
   for (const [key, value] of Object.entries(vars)) {
     root.style.setProperty(key, value);
   }
+  root.dataset.botmePreset = theme.designPreset;
   root.dataset.botmeDark = theme.darkMode ? '1' : '0';
   root.dataset.botmeCompact = theme.compactMode ? '1' : '0';
   if (!theme.animations) {
     root.classList.add('botme-no-animations');
+  } else {
+    root.classList.remove('botme-no-animations');
   }
 }
 
@@ -18,6 +21,7 @@ export interface LauncherInitConfig {
   theme: WidgetThemeConfig;
   widgetOrigin: string;
   embedPath: string;
+  assetVersion: string;
 }
 
 export async function fetchWidgetInit(

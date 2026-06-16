@@ -50,7 +50,9 @@ export class KnowledgeBaseModelRouter {
     if (!kb) throw new NotFoundException('База знаний не найдена');
     const root = await this.resolveRootIntegration(workspaceId);
     if (kb.embeddingIntegrationId !== root.id) {
-      await this.knowledgeBases.update(kbId, { embeddingIntegrationId: root.id });
+      await this.knowledgeBases.update(kbId, {
+        embeddingIntegration: { connect: { id: root.id } },
+      });
       this.logger.warn(
         `Repaired KB ${kbId} embeddingIntegrationId ${kb.embeddingIntegrationId ?? 'null'} -> ${root.id}`,
       );

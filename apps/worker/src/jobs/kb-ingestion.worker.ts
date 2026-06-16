@@ -301,13 +301,23 @@ async function chunkDocument(data: ChunkJob): Promise<void> {
 
     await prisma.kbChunk.deleteMany({ where: { documentId: doc.id } });
 
-    const chunkIdByIndex = new Map<number, string>();
+    const hashToChunkId = new Map<string, string>();
+    const indexToChunkId = new Map<number, string>();
     let tokenCount = 0;
+    let insertedCount = 0;
 
     for (const chunk of chunks) {
+      const existingId = hashToChunkId.get(chunk.contentHash);
+      if (existingId) {
+        indexToChunkId.set(chunk.chunkIndex, existingId);
+        continue;
+      }
+
       tokenCount += chunk.tokenCount;
+      insertedCount += 1;
+
       const parentChunkId =
-        chunk.parentChunkIndex != null ? chunkIdByIndex.get(chunk.parentChunkIndex) : undefined;
+        chunk.parentChunkIndex != null ? indexToChunkId.get(chunk.parentChunkIndex) : undefined;
 
       const created = await prisma.kbChunk.create({
         data: {
@@ -334,12 +344,15 @@ async function chunkDocument(data: ChunkJob): Promise<void> {
           retrievalPriority: doc.retrievalPriority ?? 1.0,
         },
       });
-      chunkIdByIndex.set(chunk.chunkIndex, created.id);
+      hashToChunkId.set(chunk.contentHash, created.id);
+      indexToChunkId.set(chunk.chunkIndex, created.id);
     }
+
+    if (insertedCount === 0) throw new Error('No chunks produced');
 
     await prisma.kbDocument.update({
       where: { id: doc.id },
-      data: { status: 'EMBEDDING', chunkCount: chunks.length, tokenCount },
+      data: { status: 'EMBEDDING', chunkCount: insertedCount, tokenCount },
     });
 
     await embedQueue.add('embed', data, {

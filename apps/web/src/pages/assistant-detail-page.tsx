@@ -19,6 +19,7 @@ import { DEFAULT_LAUNCHER_CONFIG, type LauncherConfig } from '@botme/shared';
 import { api, ApiError } from '@/lib/api';
 import { ru } from '@/i18n/ru';
 import { useAuthStore } from '@/stores/auth';
+import { WidgetStyleEditor } from '@/components/widgets/widget-style-editor';
 
 const TABS = [
   { id: 'general', label: 'General', icon: Settings2 },
@@ -404,23 +405,18 @@ export function AssistantDetailPage() {
               <Select value={widgetId} onChange={(e) => {
                 setWidgetId(e.target.value);
                 const w = linkedWidgets.find((x) => x.id === e.target.value);
-                if (w?.launcherConfig) setLauncher({ ...DEFAULT_LAUNCHER_CONFIG, ...w.launcherConfig });
+                setLauncher({ ...DEFAULT_LAUNCHER_CONFIG, ...(w?.launcherConfig ?? {}) });
               }}>
                 {linkedWidgets.map((w) => (
                   <SelectOption key={w.id} value={w.id}>{w.name} ({w.publicKey})</SelectOption>
                 ))}
               </Select>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input label="Primary color" value={launcher.primaryColor} disabled={!canMutate} onChange={(e) => setLauncher({ ...launcher, primaryColor: e.target.value })} />
-                <Input label="Secondary color" value={launcher.secondaryColor} disabled={!canMutate} onChange={(e) => setLauncher({ ...launcher, secondaryColor: e.target.value })} />
-                <Input label="Launcher icon" value={launcher.launcherIcon} disabled={!canMutate} onChange={(e) => setLauncher({ ...launcher, launcherIcon: e.target.value })} />
-                <Input label="Widget title" value={launcher.widgetTitle ?? ''} disabled={!canMutate} onChange={(e) => setLauncher({ ...launcher, widgetTitle: e.target.value })} />
-                <Input label="Welcome" value={launcher.welcomeMessage ?? ''} disabled={!canMutate} onChange={(e) => setLauncher({ ...launcher, welcomeMessage: e.target.value })} className="sm:col-span-2" />
-              </div>
-              <label className="flex items-center gap-2 text-sm text-zinc-300">
-                <input type="checkbox" disabled={!canMutate} checked={launcher.darkMode} onChange={(e) => setLauncher({ ...launcher, darkMode: e.target.checked })} />
-                Premium dark theme
-              </label>
+              <WidgetStyleEditor
+                value={launcher}
+                disabled={!canMutate || !widgetId}
+                onChange={setLauncher}
+                onUploadLauncherIcon={(file) => api.widgets.uploadLauncherIcon(widgetId, file).then((res) => res.url)}
+              />
               {canMutate && (
                 <Button loading={saveWidgetMutation.isPending} onClick={() => saveWidgetMutation.mutate()} className="gap-2">
                   <Save className="h-4 w-4" /> Save widget theme

@@ -59,6 +59,7 @@ export class AssistantService {
     }
 
     const assistant = await this.prisma.client.$transaction(async (tx) => {
+      const requestedActive = input.isActive ?? true;
       const created = await tx.assistant.create({
         data: {
           workspace: { connect: { id: workspaceId } },
@@ -73,8 +74,8 @@ export class AssistantService {
           tone: input.tone ?? 'neutral',
           language: input.language ?? 'ru',
           visibility: input.visibility ?? 'INTERNAL',
-          isActive: input.isActive ?? false,
-          status: input.isActive ? 'ACTIVE' : 'DRAFT',
+          isActive: requestedActive,
+          status: requestedActive ? 'ACTIVE' : 'DRAFT',
         },
       });
 

@@ -11,8 +11,10 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import type { IntegrationDto, ModelCacheDto } from '@botme/shared';
+import type { IntegrationDto, IntegrationModelChainItemInput, ModelCacheDto } from '@botme/shared';
+import { OPENROUTER_DEFAULT_MODEL_CHAIN } from '@botme/shared';
 import { Badge, Button, Card, Input, Select, SelectOption } from '@botme/ui';
+import { IntegrationModelChainEditor } from '@/components/integrations/integration-model-chain-editor';
 import { api, ApiError } from '@/lib/api';
 import { ru } from '@/i18n/ru';
 import { useAuthStore } from '@/stores/auth';
@@ -67,11 +69,13 @@ export function IntegrationsPage() {
     name: string;
     apiKey: string;
     isDefault: boolean;
+    modelChain: IntegrationModelChainItemInput[];
   }>({
     provider: 'OPENAI',
     name: '',
     apiKey: '',
     isDefault: false,
+    modelChain: [],
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -87,11 +91,21 @@ export function IntegrationsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => api.integrations.create(form),
+    mutationFn: () =>
+      api.integrations.create({
+        ...form,
+        modelChain: form.modelChain.length > 0 ? form.modelChain : undefined,
+      }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['integrations'] });
       setModalOpen(false);
-      setForm({ provider: 'OPENAI', name: '', apiKey: '', isDefault: false });
+      setForm({
+        provider: 'OPENAI',
+        name: '',
+        apiKey: '',
+        isDefault: false,
+        modelChain: [],
+      });
       setError(null);
     },
     onError: (err: unknown) => {
@@ -127,6 +141,17 @@ export function IntegrationsPage() {
     },
   });
 
+  const updateChainMutation = useMutation({
+    mutationFn: (payload: { id: string; modelChain: IntegrationModelChainItemInput[] }) =>
+      api.integrations.update(payload.id, { modelChain: payload.modelChain }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+    },
+  });
+
+  const integrations = integrationsQuery.data ?? [];
+  const selectedIntegration = integrations.find((i) => i.id === selectedId);
+
   const filteredModels = useMemo(() => {
     const models = modelsQuery.data ?? [];
     const q = search.trim().toLowerCase();
@@ -137,8 +162,6 @@ export function IntegrationsPage() {
         m.externalId.toLowerCase().includes(q),
     );
   }, [modelsQuery.data, search]);
-
-  const integrations = integrationsQuery.data ?? [];
 
   return (
     <div className="space-y-8">
@@ -198,6 +221,7 @@ export function IntegrationsPage() {
                   <th className="px-4 py-3">Ключ</th>
                   <th className="px-4 py-3">Статус</th>
                   <th className="px-4 py-3">Модели</th>
+                  <th className="px-4 py-3">Цепочка</th>
                   {canMutate && <th className="px-4 py-3 sm:px-6">Действия</th>}
                 </tr>
               </thead>
@@ -227,6 +251,11 @@ export function IntegrationsPage() {
                     <td className="px-4 py-3 font-mono text-xs text-zinc-400">{row.maskedKey}</td>
                     <td className="px-4 py-3">{statusBadge(row.status)}</td>
                     <td className="px-4 py-3 text-zinc-300">{row.modelCount}</td>
+                    <td className="px-4 py-3 text-zinc-400 text-xs">
+                      {row.modelChain.length > 0
+                        ? `${row.modelChain.length} мод.`
+                        : 'авто'}
+                    </td>
                     {canMutate && (
                       <td className="px-4 py-3 sm:px-6">
                         <div className="flex flex-wrap gap-2">
@@ -265,8 +294,8 @@ export function IntegrationsPage() {
         )}
       </Card>
 
-      {selectedId && (
-        <Card className="p-4 sm:p-6">
+      {selectedId && selectedIntegration && (
+        <Card className="p-4 sm:p-6 space-y-6">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-medium text-white">{ru.integrations.modelsTitle}</h2>
             <div className="relative max-w-sm flex-1">
@@ -293,6 +322,23 @@ export function IntegrationsPage() {
               ))}
             </div>
           )}
+
+          {canMutate && (
+            <IntegrationModelChainEditor
+              integrationId={selectedId}
+              chain={selectedIntegration.modelChain.map((c) => ({
+                modelId: c.modelId,
+                enabled: c.enabled,
+                maxRetries: c.maxRetries,
+                timeoutMs: c.timeoutMs,
+              }))}
+              onChange={(modelChain) =>
+                updateChainMutation.mutate({ id: selectedId, modelChain })
+              }
+              models={modelsQuery.data ?? []}
+              provider={selectedIntegration.provider}
+            />
+          )}
         </Card>
       )}
 
@@ -301,7 +347,7 @@ export function IntegrationsPage() {
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-md rounded-xl border border-white/10 bg-[#111113] p-6 shadow-2xl"
+            className="w-full max-w-lg rounded-xl border border-white/10 bg-[#111113] p-6 shadow-2xl"
           >
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-white">{ru.integrations.add}</h3>
@@ -362,6 +408,33 @@ export function IntegrationsPage() {
                 />
                 {ru.integrations.defaultIntegration}
               </label>
+              <IntegrationModelChainEditor
+                integrationId={null}
+                chain={form.modelChain}
+                onChange={(modelChain) => setForm((f) => ({ ...f, modelChain }))}
+                models={[]}
+                provider={form.provider}
+              />
+              {form.provider === 'OPENROUTER' && form.modelChain.length === 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-xs"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      modelChain: OPENROUTER_DEFAULT_MODEL_CHAIN.map((modelId) => ({
+                        modelId,
+                        enabled: true,
+                        maxRetries: 2,
+                        timeoutMs: 120_000,
+                      })),
+                    }))
+                  }
+                >
+                  Шаблон: free → GPT-4o mini → DeepSeek → Qwen
+                </Button>
+              )}
               {error && <p className="text-sm text-red-400">{error}</p>}
               <Button
                 className="w-full"

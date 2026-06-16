@@ -10,6 +10,10 @@ import {
   type FallbackFormRow,
 } from '@/components/agents/agent-fallback-chain';
 import { api, ApiError } from '@/lib/api';
+import {
+  defaultPrimaryModelId,
+  modelsForIntegrationPicker,
+} from '@/lib/integration-model-chain';
 import { ru } from '@/i18n/ru';
 import { useAuthStore } from '@/stores/auth';
 
@@ -68,6 +72,13 @@ export function AgentsPage() {
   const activeIntegrations = useMemo(
     () => (integrationsQuery.data ?? []).filter((i) => i.status === 'ACTIVE'),
     [integrationsQuery.data],
+  );
+
+  const selectedIntegration = activeIntegrations.find((i) => i.id === form.integrationId);
+
+  const pickerModels = useMemo(
+    () => modelsForIntegrationPicker(selectedIntegration, modelsQuery.data ?? []),
+    [selectedIntegration, modelsQuery.data],
   );
 
   const openCreate = () => {
@@ -270,9 +281,16 @@ export function AgentsPage() {
                 <Select
                   className="mt-1"
                   value={form.integrationId}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, integrationId: e.target.value, modelId: '' }))
-                  }
+                  onChange={(e) => {
+                    const integrationId = e.target.value;
+                    const integration = activeIntegrations.find((i) => i.id === integrationId);
+                    setForm((f) => ({
+                      ...f,
+                      integrationId,
+                      modelId: defaultPrimaryModelId(integration),
+                      fallbacks: [],
+                    }));
+                  }}
                 >
                   <SelectOption value="">—</SelectOption>
                   {activeIntegrations.map((i: IntegrationDto) => (
@@ -284,6 +302,11 @@ export function AgentsPage() {
               </label>
               <label className="block text-sm text-zinc-400">
                 Primary model
+                {selectedIntegration && selectedIntegration.modelChain.length > 0 && (
+                  <span className="ml-2 text-xs text-zinc-500">
+                    ({selectedIntegration.modelChain.length} из цепочки интеграции)
+                  </span>
+                )}
                 <Select
                   className="mt-1"
                   value={form.modelId}
@@ -291,7 +314,7 @@ export function AgentsPage() {
                   disabled={!form.integrationId}
                 >
                   <SelectOption value="">—</SelectOption>
-                  {(modelsQuery.data ?? []).map((m: ModelCacheDto) => (
+                  {pickerModels.map((m: ModelCacheDto) => (
                     <SelectOption key={m.id} value={m.externalId}>
                       {m.displayName}
                       {m.isFree ? ' (free)' : ''}

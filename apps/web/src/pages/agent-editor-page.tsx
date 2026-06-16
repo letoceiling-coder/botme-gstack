@@ -23,6 +23,7 @@ import {
 } from '@/components/agents/agent-fallback-chain';
 import { AgentModelSelector } from '@/components/agents/agent-model-selector';
 import { api, ApiError } from '@/lib/api';
+import { defaultPrimaryModelId } from '@/lib/integration-model-chain';
 import { ru } from '@/i18n/ru';
 import { useAuthStore } from '@/stores/auth';
 
@@ -467,9 +468,14 @@ export function AgentEditorPage() {
                 modelId={runtimeForm.modelId}
                 integrations={activeIntegrations}
                 disabled={!canMutate}
-                onIntegrationChange={(integrationId) =>
-                  setRuntimeForm((f) => ({ ...f, integrationId, modelId: '' }))
-                }
+                onIntegrationChange={(integrationId) => {
+                  const integration = activeIntegrations.find((i) => i.id === integrationId);
+                  setRuntimeForm((f) => ({
+                    ...f,
+                    integrationId,
+                    modelId: defaultPrimaryModelId(integration),
+                  }));
+                }}
                 onModelChange={(modelId) => setRuntimeForm((f) => ({ ...f, modelId }))}
               />
               <div className="mt-6 grid gap-4 sm:grid-cols-2">

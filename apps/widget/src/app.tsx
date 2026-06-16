@@ -20,8 +20,9 @@ import { acceptCallWithStream, destroyCallRuntime, endCall, getRemoteStream, han
 import { storeCallRecovery, loadCallRecovery, clearCallRecovery } from './lib/call-recovery-storage';
 import { scrollMessagesToBottom, bindScrollAnchor } from './lib/widget-scroll';
 import { useTextareaAutosize } from './lib/use-textarea-autosize';
+import { useWidgetViewport } from './lib/use-widget-viewport';
 import { WidgetMessageBubble } from './components/widget-message-bubble';
-import { DENTAL_QUICK_ACTIONS, SendIcon, SparkleAvatar } from './lib/widget-ui';
+import { SendIcon, SparkleAvatar } from './lib/widget-ui';
 import './widget.css';
 
 type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
@@ -131,6 +132,10 @@ export function WidgetApp() {
   const scrollIfPinned = useCallback((force = false) => {
     scrollMessagesToBottom(messagesContainerRef.current, force);
   }, []);
+  const keepComposerVisible = useCallback(() => {
+    scrollIfPinned(true);
+  }, [scrollIfPinned]);
+  useWidgetViewport(textareaRef, keepComposerVisible);
 
   const initSession = useCallback(
     (socket: Socket) => {
@@ -645,7 +650,7 @@ export function WidgetApp() {
   const assistantName = session?.assistant.name ?? 'AI Assistant';
   const showWelcomeOnly =
     messages.length <= 1 && messages.every((m) => m.role === 'ASSISTANT' && !m.streaming);
-  const quickActions = DENTAL_QUICK_ACTIONS;
+  const quickActions = session?.theme?.quickActions ?? theme?.quickActions ?? [];
 
   return (
     <div className="widget-root">
@@ -706,7 +711,7 @@ export function WidgetApp() {
           <div ref={messagesEndRef} />
         </div>
 
-        {showWelcomeOnly && (
+        {showWelcomeOnly && quickActions.length > 0 && (
           <div className="widget-quick-actions">
             {quickActions.map((label) => (
               <button

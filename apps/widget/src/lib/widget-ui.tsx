@@ -1,12 +1,3 @@
-const DENTAL_QUICK_ACTIONS = [
-  'Цены',
-  'Консультация',
-  'Имплантация',
-  'Виниры',
-  'Запись',
-  'Связаться с врачом',
-];
-
 function SendIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -28,4 +19,4 @@ function SparkleAvatar({ name }: { name: string }) {
   );
 }
 
-export { DENTAL_QUICK_ACTIONS, SendIcon, SparkleAvatar };
+export { SendIcon, SparkleAvatar };

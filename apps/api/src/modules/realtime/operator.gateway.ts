@@ -354,15 +354,39 @@ export class OperatorGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   async handleCallEnd(client: Socket, payload: unknown): Promise<{ ok: boolean }> {
     const { user } = client.data as OperatorSocketData;
     const input = WebRtcCallEndSchema.parse(payload);
-    await this.callRegistry.endCall(input.callSessionId, input.reason ?? 'ENDED');
+    const entry = await this.callRegistry.get(input.callSessionId);
+    await this.callRegistry.endCall(input.callSessionId, input.reason === 'FAILED' ? 'FAILED' : 'ENDED');
+    const endPayload = {
+      type: 'webrtc:call-end' as const,
+      callSessionId: input.callSessionId,
+      reason: input.reason ?? 'ENDED',
+    };
     this.operatorBridge.emitToCallRoom(
       input.callSessionId,
       client.id,
       this.runtime,
       user.workspaceId,
       'webrtc:call-end',
-      { type: 'webrtc:call-end', callSessionId: input.callSessionId, reason: input.reason ?? 'ENDED' },
+      endPayload,
     );
+    const visitorSocketId = entry?.visitorSocketId;
+    if (visitorSocketId) {
+      this.widgetBridge.emitToSocket(
+        visitorSocketId,
+        this.runtime,
+        user.workspaceId,
+        input.callSessionId,
+        'webrtc:call-end',
+        endPayload,
+      );
+    }
+    if (entry?.visitorSessionId) {
+      await this.visitors.setControlMode(
+        user.workspaceId,
+        entry.visitorSessionId,
+        entry.operatorId ? 'OPERATOR' : 'AI',
+      );
+    }
     void this.rtcBroadcast.broadcastNow(user.workspaceId);
     return { ok: true };
   }

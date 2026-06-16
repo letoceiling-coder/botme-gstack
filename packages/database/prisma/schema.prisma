@@ -191,6 +191,7 @@ model Workspace {
   auditLogs          AuditLog[]
   playgroundSessions PlaygroundSession[]
   agentModelFallbacks AgentModelFallback[]
+  integrationModelChain IntegrationModelChainItem[]
   visitorSessions    VisitorSession[]
   callSessions       CallSession[]
   operatorSessionLocks OperatorSessionLock[]
@@ -271,6 +272,7 @@ model AiIntegration {
   agents    Agent[]
   knowledgeBases KnowledgeBase[]
   agentModelFallbacks AgentModelFallback[]
+  modelChainItems IntegrationModelChainItem[]
 
   @@unique([workspaceId, provider, name])
   @@index([workspaceId, deletedAt])
@@ -358,6 +360,27 @@ model AgentModelFallback {
   @@index([agentId, enabled])
   @@index([workspaceId, agentId])
   @@map("agent_model_fallbacks")
+}
+
+model IntegrationModelChainItem {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  integrationId  String
+  position       Int
+  modelId        String
+  enabled        Boolean  @default(true)
+  maxRetries     Int      @default(2)
+  timeoutMs      Int      @default(120000)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  integration AiIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, position])
+  @@index([integrationId, enabled])
+  @@index([workspaceId, integrationId])
+  @@map("integration_model_chain")
 }
 
 model AgentPromptVersion {

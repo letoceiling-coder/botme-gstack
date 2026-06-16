@@ -8,6 +8,7 @@ import type { AiIntegration } from '@botme/database';
 import type {
   CreateIntegrationInput,
   IntegrationDto,
+  IntegrationModelChainItemDto,
   ModelCacheDto,
   UpdateIntegrationInput,
   ValidateIntegrationResult,
@@ -17,6 +18,7 @@ import { ProviderCredentialsResolver } from '../../../core/config/provider-crede
 import { RedisService } from '../../../core/redis/redis.service';
 import { AuditService } from '../../foundation/application/audit.service';
 import { IntegrationRepository } from '../../foundation/infrastructure/integration.repository';
+import { IntegrationModelChainRepository } from '../infrastructure/integration-model-chain.repository';
 import { ModelCacheRepository } from '../infrastructure/model-cache.repository';
 import { ModelSyncService } from './model-sync.service';
 
@@ -27,6 +29,7 @@ export class IntegrationService {
   constructor(
     private readonly integrations: IntegrationRepository,
     private readonly modelCache: ModelCacheRepository,
+    private readonly modelChain: IntegrationModelChainRepository,
     private readonly credentials: IntegrationCredentialsService,
     private readonly providerCredentials: ProviderCredentialsResolver,
     private readonly modelSync: ModelSyncService,
@@ -66,6 +69,10 @@ export class IntegrationService {
 
     if (input.isDefault) {
       await this.integrations.clearOtherDefaults(workspaceId, row.id);
+    }
+
+    if (input.modelChain !== undefined) {
+      await this.modelChain.replaceForIntegration(workspaceId, row.id, input.modelChain);
     }
 
     await this.audit.logIntegrationCreated(workspaceId, userId, row.id, {
@@ -112,6 +119,10 @@ export class IntegrationService {
 
     if (input.apiKey) {
       await this.modelSync.validateAndSync(id, workspaceId);
+    }
+
+    if (input.modelChain !== undefined) {
+      await this.modelChain.replaceForIntegration(workspaceId, id, input.modelChain);
     }
 
     await this.audit.logIntegrationUpdated(workspaceId, userId, id, {
@@ -181,6 +192,7 @@ export class IntegrationService {
 
   private async toDto(row: AiIntegration, workspaceId: string): Promise<IntegrationDto> {
     const modelCount = await this.modelCache.countByIntegration(row.id);
+    const chainRows = await this.modelChain.listByIntegration(row.id);
     const maskedKey = this.providerCredentials.isEnvManaged(row.provider)
       ? '•••• (сервер)'
       : this.credentials.maskFromStored(
@@ -196,6 +208,15 @@ export class IntegrationService {
       status: row.status,
       lastValidatedAt: row.lastValidatedAt?.toISOString() ?? null,
       modelCount,
+      modelChain: chainRows.map(
+        (r): IntegrationModelChainItemDto => ({
+          position: r.position,
+          modelId: r.modelId,
+          enabled: r.enabled,
+          maxRetries: r.maxRetries,
+          timeoutMs: r.timeoutMs,
+        }),
+      ),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };

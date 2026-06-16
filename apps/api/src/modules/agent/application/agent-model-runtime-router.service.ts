@@ -22,6 +22,7 @@ import type { AgentModelFallbackDto, AgentRuntimeDiagnosticsDto } from '@botme/s
 import { IntegrationCredentialsService } from '../../../core/security/integration-credentials.service';
 import { ProviderCredentialsResolver } from '../../../core/config/provider-credentials.resolver';
 import { IntegrationRepository } from '../../foundation/infrastructure/integration.repository';
+import { IntegrationModelChainRepository } from '../../integration/infrastructure/integration-model-chain.repository';
 import { ModelCacheRepository } from '../../integration/infrastructure/model-cache.repository';
 import { AgentRepository } from '../infrastructure/agent.repository';
 import { AgentModelFallbackRepository } from '../infrastructure/agent-model-fallback.repository';
@@ -47,6 +48,7 @@ export class AgentModelRuntimeRouter {
   constructor(
     private readonly agents: AgentRepository,
     private readonly fallbacks: AgentModelFallbackRepository,
+    private readonly integrationChain: IntegrationModelChainRepository,
     private readonly integrations: IntegrationRepository,
     private readonly modelCache: ModelCacheRepository,
     private readonly credentials: IntegrationCredentialsService,
@@ -67,11 +69,68 @@ export class AgentModelRuntimeRouter {
     });
 
     const fallbackRows = await this.fallbacks.listByAgent(workspaceId, agentId);
-    const fallbackEntries = await Promise.all(
-      fallbackRows.map((r) => this.toChainEntry(workspaceId, r)),
-    );
+    let fallbackEntries: AgentModelChainEntry[];
+
+    if (fallbackRows.length > 0) {
+      fallbackEntries = await Promise.all(
+        fallbackRows.map((r) => this.toChainEntry(workspaceId, r)),
+      );
+    } else {
+      const integrationRows = await this.integrationChain.listByIntegration(agent.integrationId);
+      const chainRows = integrationRows.filter((r) => r.enabled && r.modelId !== agent.modelId);
+
+      if (chainRows.length > 0) {
+        fallbackEntries = await Promise.all(
+          chainRows.map((r, index) =>
+            this.toChainEntry(workspaceId, {
+              position: index + 1,
+              integrationId: agent.integrationId,
+              modelId: r.modelId,
+              enabled: r.enabled,
+              maxRetries: r.maxRetries,
+              timeoutMs: r.timeoutMs,
+            }),
+          ),
+        );
+      } else {
+        const autoModelIds = await this.resolveAutoFallbackModels(
+          agent.integrationId,
+          agent.modelId,
+        );
+        fallbackEntries = await Promise.all(
+          autoModelIds.map((modelId, index) =>
+            this.toChainEntry(workspaceId, {
+              position: index + 1,
+              integrationId: agent.integrationId,
+              modelId,
+              enabled: true,
+              maxRetries: 2,
+              timeoutMs: 120_000,
+            }),
+          ),
+        );
+      }
+    }
 
     return [primary, ...fallbackEntries];
+  }
+
+  /** When integration chain is empty — pick free/cheap synced models as fallbacks. */
+  private async resolveAutoFallbackModels(
+    integrationId: string,
+    excludeModelId: string,
+  ): Promise<string[]> {
+    const models = await this.modelCache.listByIntegration(integrationId);
+    return models
+      .filter((m) => m.externalId !== excludeModelId)
+      .sort((a, b) => {
+        if (a.isFree !== b.isFree) return a.isFree ? -1 : 1;
+        const pa = Number(a.promptPrice ?? 999);
+        const pb = Number(b.promptPrice ?? 999);
+        return pa - pb;
+      })
+      .slice(0, 8)
+      .map((m) => m.externalId);
   }
 
   async *streamWithFailover(

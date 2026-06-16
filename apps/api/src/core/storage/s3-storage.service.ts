@@ -53,6 +53,10 @@ export class S3StorageService {
     return `workspaces/${workspaceId}/kb/${knowledgeBaseId}/${documentId}/${safe}`;
   }
 
+  buildPublicUrl(storageKey: string): string {
+    return `${this.publicEndpoint.replace(/\/$/, '')}/${this.bucket}/${storageKey}`;
+  }
+
   async putObject(storageKey: string, body: Buffer, mimeType: string): Promise<void> {
     await this.internalClient.send(
       new PutObjectCommand({

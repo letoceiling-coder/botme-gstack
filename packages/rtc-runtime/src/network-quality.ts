@@ -1,6 +1,6 @@
 import type { RtcDiagnosticsSnapshot } from './types.js';
 
-export type NetworkQualityLevel = 'excellent' | 'good' | 'unstable' | 'poor' | 'disconnected';
+export type NetworkQualityLevel = 'excellent' | 'good' | 'connecting' | 'unstable' | 'poor' | 'disconnected';
 
 export interface QualityThresholds {
   excellentRttMs: number;
@@ -33,9 +33,9 @@ export function classifyNetworkQuality(
   ) {
     return 'disconnected';
   }
-  // ICE still negotiating — do not show "excellent" before media path exists.
+  // ICE still negotiating — neutral copy, not a failure warning.
   if (snapshot.iceState === 'new' || snapshot.iceState === 'checking') {
-    return 'unstable';
+    return 'connecting';
   }
   if (snapshot.iceState === 'disconnected' || snapshot.mediaFrozen) {
     return 'poor';
@@ -53,6 +53,7 @@ export function classifyNetworkQuality(
 export const QUALITY_LABELS_RU: Record<NetworkQualityLevel, string> = {
   excellent: 'Отличное соединение',
   good: 'Хорошее соединение',
+  connecting: 'Подключение…',
   unstable: 'Связь нестабильна',
   poor: 'Плохое соединение',
   disconnected: 'Нет соединения',

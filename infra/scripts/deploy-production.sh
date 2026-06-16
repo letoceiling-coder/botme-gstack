@@ -47,8 +47,10 @@ rsync -avz -e "$RSYNC_SSH" \
   apps/api/dist/ "${SERVER}:${REMOTE}/apps/api/dist/"
 rsync -avz -e "$RSYNC_SSH" \
   apps/web/dist/ "${SERVER}:${REMOTE}/apps/web/dist/"
+ssh -i "$SSH_KEY" "$SERVER" "chmod -R a+rX ${REMOTE}/apps/web/dist"
 rsync -avz -e "$RSYNC_SSH" \
   apps/widget/dist/ "${SERVER}:${REMOTE}/apps/widget/dist/"
+ssh -i "$SSH_KEY" "$SERVER" "chmod -R a+rX ${REMOTE}/apps/widget/dist"
 rsync -avz -e "$RSYNC_SSH" \
   apps/operator-panel/dist/ "${SERVER}:${REMOTE}/apps/operator-panel/dist/"
 rsync -avz -e "$RSYNC_SSH" \

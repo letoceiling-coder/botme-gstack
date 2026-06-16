@@ -4,6 +4,7 @@ import { Search, Star } from 'lucide-react';
 import type { IntegrationDto, ModelCacheDto } from '@botme/shared';
 import { Badge, Input, Select, SelectOption } from '@botme/ui';
 import { api } from '@/lib/api';
+import { modelsForIntegrationPicker } from '@/lib/integration-model-chain';
 
 const PROVIDERS = ['OPENROUTER', 'OPENAI', 'ANTHROPIC', 'OLLAMA_NEEKLO'] as const;
 
@@ -44,9 +45,12 @@ export function AgentModelSelector({
     return activeIntegrations.filter((i) => i.provider === providerFilter);
   }, [activeIntegrations, providerFilter]);
 
+  const selectedIntegration = activeIntegrations.find((i) => i.id === integrationId);
+
   const groupedModels = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const models = (modelsQuery.data ?? []).filter(
+    const pool = modelsForIntegrationPicker(selectedIntegration, modelsQuery.data ?? []);
+    const models = pool.filter(
       (m: ModelCacheDto) =>
         !q ||
         m.displayName.toLowerCase().includes(q) ||
@@ -55,9 +59,7 @@ export function AgentModelSelector({
     const fav = models.filter((m) => favorites.has(m.externalId));
     const rest = models.filter((m) => !favorites.has(m.externalId));
     return { fav, rest, all: models };
-  }, [modelsQuery.data, search, favorites]);
-
-  const selectedIntegration = activeIntegrations.find((i) => i.id === integrationId);
+  }, [modelsQuery.data, search, favorites, selectedIntegration]);
 
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
@@ -128,7 +130,14 @@ export function AgentModelSelector({
       </div>
 
       <div>
-        <p className="mb-2 text-sm font-medium text-zinc-300">Model</p>
+        <p className="mb-2 text-sm font-medium text-zinc-300">
+          Model
+          {selectedIntegration && selectedIntegration.modelChain.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-zinc-500">
+              ({selectedIntegration.modelChain.length} из цепочки интеграции)
+            </span>
+          )}
+        </p>
         <div className="relative mb-2">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
           <Input

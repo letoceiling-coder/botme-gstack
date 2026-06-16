@@ -17,6 +17,8 @@
     primaryColor: '#39ff14',
     textColor: '#000000',
     launcherIcon: '💬',
+    launcherIconUrl: '',
+    assetVersion: '',
     borderRadius: 16,
     iframeWidth: 380,
     iframeHeight: 520,
@@ -52,13 +54,23 @@
   }
 
   function applyMobileFullscreen(iframeEl: HTMLIFrameElement) {
-    iframeEl.style.inset = '0';
-    iframeEl.style.width = '100%';
-    iframeEl.style.height = '100dvh';
-    iframeEl.style.maxWidth = '100%';
-    iframeEl.style.maxHeight = '100dvh';
+    const viewport = window.visualViewport;
+    const height = Math.max(320, Math.round(viewport?.height ?? window.innerHeight));
+    const offsetTop = Math.max(0, Math.round(viewport?.offsetTop ?? 0));
+    iframeEl.style.inset = 'auto';
+    iframeEl.style.top = `${offsetTop}px`;
+    iframeEl.style.left = '0';
+    iframeEl.style.right = 'auto';
+    iframeEl.style.width = '100vw';
+    iframeEl.style.height = `${height}px`;
+    iframeEl.style.maxWidth = '100vw';
+    iframeEl.style.maxHeight = `${height}px`;
     iframeEl.style.borderRadius = '0';
-    iframeEl.style.bottom = '0';
+    iframeEl.style.bottom = 'auto';
+  }
+
+  function shouldUseMobileFullscreen(cfg: typeof defaults) {
+    return cfg.fullscreenMobile && window.matchMedia('(max-width: 640px)').matches;
   }
 
   function render(cfg: typeof defaults) {
@@ -70,9 +82,22 @@
     launcher.type = 'button';
     launcher.setAttribute('aria-label', 'Открыть чат Botme');
     launcher.className = 'botme-launcher';
-    launcher.innerHTML = `<span class="botme-launcher-icon">${cfg.launcherIcon}</span><span class="botme-launcher-glow"></span>`;
+    const launcherIcon = document.createElement('span');
+    launcherIcon.className = 'botme-launcher-icon';
+    if (cfg.launcherIconUrl) {
+      const launcherImage = document.createElement('img');
+      launcherImage.className = 'botme-launcher-img';
+      launcherImage.src = cfg.launcherIconUrl;
+      launcherImage.alt = '';
+      launcherIcon.append(launcherImage);
+    } else {
+      launcherIcon.textContent = cfg.launcherIcon;
+    }
+    const launcherGlow = document.createElement('span');
+    launcherGlow.className = 'botme-launcher-glow';
+    launcher.append(launcherIcon, launcherGlow);
     launcher.style.cssText = [
-      'position:fixed;bottom:20px;z-index:2147483646;',
+      'position:fixed;bottom:calc(20px + env(safe-area-inset-bottom, 0px));z-index:2147483646;',
       pos.launcher,
       'width:60px;height:60px;border:none;padding:0;',
       `border-radius:${Math.min(cfg.borderRadius + 40, 50)}%;`,
@@ -91,7 +116,8 @@
         @keyframes botme-pulse { 0%{box-shadow:0 0 0 0 rgba(99,102,241,0.5)} 70%{box-shadow:0 0 0 14px rgba(99,102,241,0)} 100%{box-shadow:0 0 0 0 rgba(99,102,241,0)} }
         .botme-launcher { box-shadow:0 8px 32px rgba(99,102,241,0.45); transition:transform 0.2s ease, box-shadow 0.2s ease; animation:botme-pulse 2.5s ease-out infinite, botme-float 3s ease-in-out infinite; }
         .botme-launcher:hover { transform:scale(1.08); box-shadow:0 12px 40px rgba(99,102,241,0.55); }
-        .botme-launcher-icon { position:relative; z-index:1; }
+        .botme-launcher-icon { position:relative; z-index:1; display:grid; place-items:center; width:100%; height:100%; }
+        .botme-launcher-img { width:70%; height:70%; object-fit:contain; display:block; }
         .botme-launcher-glow { position:absolute; inset:-4px; border-radius:inherit; background:radial-gradient(circle, rgba(255,255,255,0.25), transparent 70%); opacity:0.6; }
       `;
       document.head.appendChild(style);
@@ -99,7 +125,8 @@
 
     const iframe = document.createElement('iframe');
     iframe.title = 'Botme AI';
-    iframe.src = `${widgetOrigin}/widget/?widgetKey=${encodeURIComponent(widgetKey)}`;
+    const versionParam = cfg.assetVersion ? `&v=${encodeURIComponent(cfg.assetVersion)}` : '';
+    iframe.src = `${widgetOrigin}/widget/?widgetKey=${encodeURIComponent(widgetKey)}${versionParam}`;
     iframe.style.cssText = desktopIframeStyle(cfg, pos);
     iframe.setAttribute(
       'allow',
@@ -111,6 +138,16 @@
     );
 
     let open = false;
+
+    const syncOpenFrame = () => {
+      if (!open) return;
+      if (shouldUseMobileFullscreen(cfg)) {
+        applyMobileFullscreen(iframe);
+        return;
+      }
+      iframe.style.cssText = desktopIframeStyle(cfg, pos);
+      iframe.style.display = 'block';
+    };
 
     const setWidgetOpen = (next: boolean) => {
       open = next;
@@ -125,13 +162,20 @@
         return;
       }
 
-      if (cfg.fullscreenMobile && window.matchMedia('(max-width: 640px)').matches) {
+      if (shouldUseMobileFullscreen(cfg)) {
         applyMobileFullscreen(iframe);
       }
     };
 
     launcher.addEventListener('click', () => {
       setWidgetOpen(!open);
+    });
+
+    window.visualViewport?.addEventListener('resize', syncOpenFrame);
+    window.visualViewport?.addEventListener('scroll', syncOpenFrame);
+    window.addEventListener('resize', syncOpenFrame);
+    window.addEventListener('orientationchange', () => {
+      window.setTimeout(syncOpenFrame, 120);
     });
 
     window.addEventListener('message', (event) => {
@@ -145,15 +189,21 @@
     document.body.append(host);
   }
 
-  fetch(`${apiOrigin}/api/public/widget/${encodeURIComponent(widgetKey)}/init`, { credentials: 'omit' })
+  fetch(`${apiOrigin}/api/public/widget/${encodeURIComponent(widgetKey)}/init`, {
+    credentials: 'omit',
+    cache: 'no-store',
+  })
     .then((res) => (res.ok ? res.json() : null))
-    .then((data: { theme?: typeof defaults; widgetOrigin?: string; embedPath?: string } | null) => {
+    .then((data: { theme?: typeof defaults; widgetOrigin?: string; embedPath?: string; assetVersion?: string } | null) => {
       if (data?.theme) {
         const t = data.theme;
+        const assetVersion = data.assetVersion ?? t.assetVersion ?? defaults.assetVersion;
         render({
           primaryColor: t.primaryColor ?? defaults.primaryColor,
           textColor: t.darkMode === false ? '#111' : (t.textColor ?? defaults.textColor),
           launcherIcon: t.launcherIcon ?? defaults.launcherIcon,
+          launcherIconUrl: t.launcherIconUrl ?? defaults.launcherIconUrl,
+          assetVersion,
           borderRadius: t.borderRadius ?? defaults.borderRadius,
           iframeWidth: t.iframeWidth ?? defaults.iframeWidth,
           iframeHeight: t.iframeHeight ?? defaults.iframeHeight,
@@ -164,7 +214,8 @@
         if (data.widgetOrigin && data.embedPath) {
           const iframe = document.querySelector(`#${hostId} iframe`) as HTMLIFrameElement | null;
           if (iframe) {
-            iframe.src = `${data.widgetOrigin}${data.embedPath}?widgetKey=${encodeURIComponent(widgetKey)}`;
+            const versionParam = assetVersion ? `&v=${encodeURIComponent(assetVersion)}` : '';
+            iframe.src = `${data.widgetOrigin}${data.embedPath}?widgetKey=${encodeURIComponent(widgetKey)}${versionParam}`;
           }
         }
       } else {

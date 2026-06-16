@@ -90,7 +90,9 @@ export class WebRtcSignalService {
       throw new HttpException('TURN credential rate limit', HttpStatus.TOO_MANY_REQUESTS);
     }
     const ttlSec = 86400;
-    const username = `${Math.floor(Date.now() / 1000) + ttlSec}`;
+    // Unique suffix per issue — avoids coturn allocation collisions when operator
+    // and visitor fetch credentials in the same second.
+    const username = `${Math.floor(Date.now() / 1000) + ttlSec}:${randomUUID().slice(0, 8)}`;
     const credential = createHmac('sha1', this.turnSecret).update(username).digest('base64');
     // CRITICAL: STUN and TURN URLs MUST live in SEPARATE RTCIceServer entries.
     // A single entry that mixes a stun: URL with username/credential is invalid
@@ -101,6 +103,7 @@ export class WebRtcSignalService {
         urls: [
           `turn:${this.turnHost}:3478?transport=udp`,
           `turn:${this.turnHost}:3478?transport=tcp`,
+          `turns:${this.turnHost}:5349?transport=tcp`,
         ],
         username,
         credential,

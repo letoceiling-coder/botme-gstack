@@ -19,6 +19,7 @@ export class WidgetPublicController {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
     }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     return this.widgetPublic.getInit(publicKey, origin, referer);
   }
 }
