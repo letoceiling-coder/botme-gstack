@@ -43,6 +43,7 @@ export class KnowledgeBaseService {
   private readonly logger = new Logger(KnowledgeBaseService.name);
   private readonly parseQueue: Queue;
   private readonly crawlQueue: Queue;
+  private readonly embedQueue: Queue;
   private readonly cleanupQueue: Queue;
 
   constructor(
@@ -60,6 +61,7 @@ export class KnowledgeBaseService {
     const connection = redis.client;
     this.parseQueue = new Queue('kb.parse', { connection });
     this.crawlQueue = new Queue('kb.crawl', { connection });
+    this.embedQueue = new Queue('kb.embed', { connection });
     this.cleanupQueue = new Queue('kb.cleanup', { connection });
   }
 
@@ -385,6 +387,13 @@ export class KnowledgeBaseService {
     documentId: string,
   ): Promise<{ ok: true }> {
     const doc = await this.getDocOrThrow(workspaceId, kbId, documentId);
+    await this.modelRouter.syncKbEmbeddingIntegration(workspaceId, kbId).catch((err: unknown) => {
+      if (err instanceof NotFoundException) throw err;
+      this.logger.warn(
+        `retry doc=${documentId}: integration sync failed: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
+    });
+
     await this.documents.update(documentId, {
       status: 'RETRYING',
       errorMessage: null,
@@ -396,6 +405,13 @@ export class KnowledgeBaseService {
         'crawl',
         { documentId, workspaceId, knowledgeBaseId: kbId },
         { attempts: 2, backoff: { type: 'exponential', delay: 3000 } },
+      );
+    } else if (doc.chunkCount > 0) {
+      await this.documents.update(documentId, { status: 'EMBEDDING' });
+      await this.embedQueue.add(
+        'embed',
+        { documentId, workspaceId, knowledgeBaseId: kbId },
+        { attempts: 3, backoff: { type: 'exponential', delay: 2000 } },
       );
     } else {
       await this.enqueueParse(documentId, workspaceId, kbId);

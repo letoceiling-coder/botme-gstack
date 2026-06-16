@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@botme/database';
 import { Queue } from 'bullmq';
 import { RedisService } from '../../../core/redis/redis.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { KbIntegrityService } from './kb-integrity.service';
+import { KnowledgeBaseModelRouter } from './knowledge-base-model-router.service';
 
 @Injectable()
 export class KbHealingService {
@@ -15,6 +16,7 @@ export class KbHealingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly integrity: KbIntegrityService,
+    private readonly modelRouter: KnowledgeBaseModelRouter,
     redis: RedisService,
   ) {
     const connection = redis.client;
@@ -26,6 +28,18 @@ export class KbHealingService {
   async healKnowledgeBase(workspaceId: string, kbId: string) {
     const report = await this.integrity.auditKnowledgeBase(workspaceId, kbId);
     const actions: string[] = [];
+
+    try {
+      await this.modelRouter.syncKbEmbeddingIntegration(workspaceId, kbId);
+      actions.push('synced KB embedding integration');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'integration sync failed';
+      if (err instanceof NotFoundException) {
+        actions.push(`embedding integration sync skipped: ${message}`);
+      } else {
+        throw err;
+      }
+    }
 
     const orphanChunks = await this.prisma.client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT c.id FROM kb_chunks c
@@ -75,15 +89,34 @@ export class KbHealingService {
         deletedAt: null,
         status: { in: ['FAILED', 'RETRYING'] },
       },
-      select: { id: true, sourceType: true },
+      select: { id: true, sourceType: true, chunkCount: true },
     });
     for (const doc of stuck) {
-      await this.parseQueue.add(
-        'parse',
-        { documentId: doc.id, workspaceId, knowledgeBaseId: kbId },
-        { attempts: 3, backoff: { type: 'exponential', delay: 2000 } },
-      );
-      actions.push(`re-queued parse for failed doc ${doc.id}`);
+      await this.prisma.client.kbDocument.update({
+        where: { id: doc.id },
+        data: { status: 'RETRYING', errorMessage: null, retryCount: { increment: 1 } },
+      });
+      if (doc.chunkCount > 0) {
+        await this.prisma.client.kbDocument.update({
+          where: { id: doc.id },
+          data: { status: 'EMBEDDING' },
+        });
+        await this.embedQueue.add(
+          'embed',
+          { documentId: doc.id, workspaceId, knowledgeBaseId: kbId },
+          { attempts: 3, backoff: { type: 'exponential', delay: 2000 } },
+        );
+        actions.push(`re-queued embed for failed doc ${doc.id} (${doc.chunkCount} chunks)`);
+      } else if (doc.sourceType === 'URL') {
+        actions.push(`skipped URL doc ${doc.id} — use retry from UI`);
+      } else {
+        await this.parseQueue.add(
+          'parse',
+          { documentId: doc.id, workspaceId, knowledgeBaseId: kbId },
+          { attempts: 3, backoff: { type: 'exponential', delay: 2000 } },
+        );
+        actions.push(`re-queued parse for failed doc ${doc.id}`);
+      }
     }
 
     await this.reconcileCounters(workspaceId, kbId);

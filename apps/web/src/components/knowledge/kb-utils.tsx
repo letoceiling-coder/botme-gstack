@@ -55,6 +55,19 @@ export function filterKbs(kbs: KnowledgeBaseDto[], search: string): KnowledgeBas
   return kbs.filter((k) => k.name.toLowerCase().includes(q));
 }
 
+/** User-facing hint for ingestion errors (text may still be visible in editor). */
+export function formatDocErrorMessage(message: string | null | undefined): string | null {
+  if (!message?.trim()) return null;
+  const lower = message.toLowerCase();
+  if (lower.includes('integration not found')) {
+    return 'Не удалось построить embeddings — проверьте AI-интеграцию OpenRouter и нажмите «Повтор»';
+  }
+  if (lower.includes('root openrouter')) {
+    return 'Нет активной OpenRouter-интеграции для embeddings';
+  }
+  return message;
+}
+
 export const UPLOAD_MIME: Record<string, string> = {
   txt: 'text/plain',
   md: 'text/markdown',
@@ -64,6 +77,7 @@ export const UPLOAD_MIME: Record<string, string> = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   html: 'text/html',
   htm: 'text/html',
+  json: 'application/json',
 };
 
 export type WorkspaceTab = 'documents' | 'editor' | 'chunks' | 'retrieval' | 'settings';

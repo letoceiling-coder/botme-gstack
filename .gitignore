@@ -10,3 +10,10 @@ coverage
 .prisma
 .releases/
 release.json
+server-mirror/
+server-config/
+/*.js
+/*.js.map
+/*.d.ts
+/*.d.ts.map
+tmp-*.sh

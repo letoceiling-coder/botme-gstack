@@ -137,3 +137,48 @@ function isRobotsBlocked(url: string, disallow: string[]): boolean {
   const path = new URL(url).pathname;
   return disallow.some((rule) => rule === '/' || path.startsWith(rule));
 }
+
+/** Collect same-origin URLs for batch parser jobs (max 20). */
+export async function discoverCrawlUrls(config: CrawlConfig, limit = 20): Promise<string[]> {
+  const start = await assertSafeFetchUrl(config.startUrl);
+  const origin = start.origin;
+  const visited = new Set<string>();
+  const urls: string[] = [];
+  const queue: Array<{ url: string; depth: number }> = [
+    { url: canonicalizeUrl(start.toString()), depth: 0 },
+  ];
+
+  let robotsDisallow: string[] = [];
+  if (config.respectRobots) {
+    robotsDisallow = await fetchRobotsDisallow(origin);
+  }
+
+  const cap = Math.min(limit, 20, config.maxPages);
+
+  while (queue.length > 0 && urls.length < cap) {
+    const next = queue.shift();
+    if (!next || visited.has(next.url)) continue;
+    if (next.depth > config.maxDepth) continue;
+    if (!matchesPatterns(next.url, config.includePatterns, config.excludePatterns)) continue;
+    if (config.respectRobots && isRobotsBlocked(next.url, robotsDisallow)) continue;
+
+    visited.add(next.url);
+    urls.push(next.url);
+
+    if (next.depth < config.maxDepth) {
+      try {
+        const page = await fetchPage(next.url);
+        for (const link of page.links) {
+          if (visited.has(link)) continue;
+          if (!link.startsWith(origin)) continue;
+          if (urls.length + queue.length >= cap * 3) continue;
+          queue.push({ url: link, depth: next.depth + 1 });
+        }
+      } catch {
+        /* skip link discovery errors */
+      }
+    }
+  }
+
+  return urls;
+}

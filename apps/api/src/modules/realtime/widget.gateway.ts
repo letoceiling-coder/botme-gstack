@@ -137,6 +137,7 @@ export class WidgetGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       workspaceId: ctx.workspaceId,
       widgetId: ctx.widgetId,
       visitorId: input.visitorId,
+      socketId: client.id,
       currentPage: input.currentPage,
       tabVisible: input.tabVisible,
     });

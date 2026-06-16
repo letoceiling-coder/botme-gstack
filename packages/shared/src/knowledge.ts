@@ -67,6 +67,7 @@ export const UploadDocumentSchema = z.object({
     'text/csv',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'text/html',
+    'application/json',
   ]),
   sizeBytes: z.number().int().min(1).max(50 * 1024 * 1024),
   fileHash: z.string().min(32).max(128),

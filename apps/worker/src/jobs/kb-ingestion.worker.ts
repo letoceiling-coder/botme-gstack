@@ -28,7 +28,9 @@ import {
 } from '@botme/ai-core';
 import { EnvelopeEncryptionService } from '@botme/crypto';
 import { registerWorkerParsers } from '../parsers/register-parsers.js';
-import { crawlWebsite, type CrawlConfig } from './kb-crawl.js';
+import { crawlWebsite, discoverCrawlUrls, type CrawlConfig } from './kb-crawl.js';
+import { NeekloParserClient } from '../services/neeklo-parser.client.js';
+import { parserUrlsResultToCrawlPages } from '../services/neeklo-parser-to-kb.js';
 
 loadEnv({ path: resolve(process.cwd(), '../../.env'), override: true });
 registerWorkerParsers();
@@ -123,18 +125,42 @@ async function crawlDocument(data: DocJob): Promise<void> {
 
     await prisma.kbDocument.update({ where: { id: doc.id }, data: { status: 'PARSING' } });
 
-    const config = (doc.crawlConfig ?? {}) as unknown as CrawlConfig & { startUrl?: string };
+    const config = (doc.crawlConfig ?? {}) as unknown as CrawlConfig & { startUrl?: string; parserGoal?: string };
     const startUrl = doc.sourceUrl ?? config.startUrl;
     if (!startUrl) throw new Error('URL не указан');
 
-    const pages = await crawlWebsite({
-      startUrl,
-      maxDepth: config.maxDepth ?? 0,
-      maxPages: config.maxPages ?? 20,
-      includePatterns: config.includePatterns,
-      excludePatterns: config.excludePatterns,
-      respectRobots: config.respectRobots ?? true,
-    });
+    const parser = NeekloParserClient.fromEnv();
+    let pages;
+    if (parser) {
+      const urls =
+        (config.maxDepth ?? 0) > 0 || (config.maxPages ?? 1) > 1
+          ? await discoverCrawlUrls(
+              {
+                startUrl,
+                maxDepth: config.maxDepth ?? 0,
+                maxPages: config.maxPages ?? 20,
+                includePatterns: config.includePatterns,
+                excludePatterns: config.excludePatterns,
+                respectRobots: config.respectRobots ?? true,
+              },
+              20,
+            )
+          : [startUrl];
+      const goal =
+        config.parserGoal?.trim() ||
+        `контент для базы знаний «${doc.title}»: услуги, цены, FAQ, контакты`;
+      const parsed = await parser.parseUrls(urls, goal);
+      pages = parserUrlsResultToCrawlPages(parsed);
+    } else {
+      pages = await crawlWebsite({
+        startUrl,
+        maxDepth: config.maxDepth ?? 0,
+        maxPages: config.maxPages ?? 20,
+        includePatterns: config.includePatterns,
+        excludePatterns: config.excludePatterns,
+        respectRobots: config.respectRobots ?? true,
+      });
+    }
 
     if (pages.length === 0) throw new Error('Crawl не нашёл контент');
 
@@ -199,6 +225,8 @@ async function parseDocument(data: DocJob): Promise<void> {
     if (!parsed.text.trim()) throw new Error('No extractable text');
 
     const docMeta = extractDocumentMetadata(parsed.text, doc.mimeType, doc.title);
+    const documentType =
+      parsed.metadata.documentType ?? docMeta.documentType ?? 'general';
 
     const storageKey =
       doc.storageKey ||
@@ -215,8 +243,8 @@ async function parseDocument(data: DocJob): Promise<void> {
         category: docMeta.category ?? undefined,
         tags: docMeta.tags ?? [],
         language: docMeta.language ?? 'ru',
-        documentType: docMeta.documentType ?? 'general',
-        metadata: docMeta as object,
+        documentType,
+        metadata: { ...(docMeta as object), parserDocumentType: parsed.metadata.documentType },
       },
     });
 

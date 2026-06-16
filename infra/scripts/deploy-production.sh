@@ -52,6 +52,8 @@ rsync -avz -e "$RSYNC_SSH" \
 rsync -avz -e "$RSYNC_SSH" \
   apps/operator-panel/dist/ "${SERVER}:${REMOTE}/apps/operator-panel/dist/"
 rsync -avz -e "$RSYNC_SSH" \
+  apps/worker/dist/ "${SERVER}:${REMOTE}/apps/worker/dist/"
+rsync -avz -e "$RSYNC_SSH" \
   operator-runtime/ "${SERVER}:${REMOTE}/operator-runtime/"
 
 echo "==> Rsync workspace package dist"
@@ -64,6 +66,8 @@ for pkg in ai-core ai-runtime realtime-runtime rtc-runtime shared database crypt
 done
 rsync -avz -e "$RSYNC_SSH" \
   apps/api/package.json "${SERVER}:${REMOTE}/apps/api/package.json"
+rsync -avz -e "$RSYNC_SSH" \
+  apps/worker/package.json "${SERVER}:${REMOTE}/apps/worker/package.json"
 rsync -avz -e "$RSYNC_SSH" \
   pnpm-lock.yaml pnpm-workspace.yaml package.json \
   "${SERVER}:${REMOTE}/"

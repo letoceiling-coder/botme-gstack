@@ -10,6 +10,7 @@ export interface ParseMetadata {
   encoding?: string;
   wordCount?: number;
   sourceFormat: string;
+  documentType?: 'faq' | 'general' | 'text' | 'markdown';
 }
 
 export interface DocumentParser {

@@ -10,6 +10,7 @@ import {
 } from '@botme/ai-core';
 import { IntegrationCredentialsService } from '../../../core/security/integration-credentials.service';
 import { IntegrationRepository } from '../../foundation/infrastructure/integration.repository';
+import { KnowledgeBaseRepository } from '../infrastructure/knowledge-base.repository';
 
 @Injectable()
 export class KnowledgeBaseModelRouter {
@@ -20,6 +21,7 @@ export class KnowledgeBaseModelRouter {
   constructor(
     private readonly integrations: IntegrationRepository,
     private readonly credentials: IntegrationCredentialsService,
+    private readonly knowledgeBases: KnowledgeBaseRepository,
   ) {}
 
   defaultEmbeddingModel(): string {
@@ -41,6 +43,19 @@ export class KnowledgeBaseModelRouter {
       throw new NotFoundException('Root OpenRouter интеграция не активна');
     }
     return integration;
+  }
+
+  async syncKbEmbeddingIntegration(workspaceId: string, kbId: string): Promise<string> {
+    const kb = await this.knowledgeBases.findById(workspaceId, kbId);
+    if (!kb) throw new NotFoundException('База знаний не найдена');
+    const root = await this.resolveRootIntegration(workspaceId);
+    if (kb.embeddingIntegrationId !== root.id) {
+      await this.knowledgeBases.update(kbId, { embeddingIntegrationId: root.id });
+      this.logger.warn(
+        `Repaired KB ${kbId} embeddingIntegrationId ${kb.embeddingIntegrationId ?? 'null'} -> ${root.id}`,
+      );
+    }
+    return root.id;
   }
 
   async ensureKbEmbeddingIntegration(

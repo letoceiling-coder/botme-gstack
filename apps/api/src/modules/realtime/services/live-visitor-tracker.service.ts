@@ -73,6 +73,7 @@ export class LiveVisitorTrackerService {
     workspaceId: string;
     widgetId: string;
     visitorId: string;
+    socketId?: string;
     currentPage?: string;
     tabVisible?: boolean;
   }) {
@@ -88,6 +89,7 @@ export class LiveVisitorTrackerService {
         currentPage: params.currentPage,
         tabVisible: params.tabVisible ?? true,
         status: 'ONLINE',
+        ...(params.socketId ? { socketId: params.socketId } : {}),
       },
     });
     return session.count;

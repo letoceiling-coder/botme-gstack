@@ -28,6 +28,7 @@ import {
 } from '../lib/operator-rtc-session';
 import { storeOperatorRecovery, clearOperatorRecovery } from '../lib/call-recovery-storage';
 import { controlModeLabel, formatDuration } from '../lib/operator-labels';
+import { switchWorkspace } from '../lib/api';
 import { opRu } from '../i18n/ru';
 
 type ChatLine = WidgetMessageDto & { system?: boolean; label?: string };
@@ -70,6 +71,7 @@ export function OperatorPlatform({ session }: Props) {
   const [showRtcOverlay, setShowRtcOverlay] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
 
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [pendingOffer, setPendingOffer] = useState<{ callSessionId: string; sdp: string; inviteType: 'VOICE' | 'VIDEO' } | null>(null);
@@ -483,6 +485,23 @@ export function OperatorPlatform({ session }: Props) {
     return opRu.authorAi;
   };
 
+  const workspaces = session.workspaces ?? [];
+  const showWorkspaceHint =
+    visitors.length === 0 && connection === 'online' && workspaces.length > 1;
+
+  const onSwitchWorkspace = async (workspaceId: string) => {
+    if (workspaceId === session.workspace.id || switchingWorkspace) return;
+    setSwitchingWorkspace(true);
+    setError(null);
+    try {
+      await switchWorkspace(workspaceId);
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось переключить workspace');
+      setSwitchingWorkspace(false);
+    }
+  };
+
   return (
     <div className="op-shell">
       <header className="op-topbar">
@@ -493,8 +512,29 @@ export function OperatorPlatform({ session }: Props) {
             <p>{session.workspace.name}</p>
           </div>
         </div>
-        <div className={`op-pill op-pill--${connection}`}>{connectionLabel(connection)}</div>
+        <div className="op-topbar-actions">
+          {workspaces.length > 1 && (
+            <div className="op-workspace-switch" role="group" aria-label={opRu.switchWorkspace}>
+              {workspaces.map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  className={ws.id === session.workspace.id ? 'op-workspace-btn is-active' : 'op-workspace-btn'}
+                  disabled={ws.id === session.workspace.id || switchingWorkspace}
+                  onClick={() => void onSwitchWorkspace(ws.id)}
+                >
+                  {ws.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className={`op-pill op-pill--${connection}`}>{connectionLabel(connection)}</div>
+        </div>
       </header>
+
+      {showWorkspaceHint && (
+        <div className="op-banner op-banner--hint">{opRu.wrongWorkspaceHint}</div>
+      )}
 
       {error && <div className="op-banner op-banner--error">{error}</div>}
 

@@ -1,5 +1,8 @@
 export const opRu = {
   title: 'Панель оператора',
+  switchWorkspace: 'Workspace',
+  wrongWorkspaceHint:
+    'Список пуст: посетители привязаны к workspace виджета. Переключите workspace, если виджет установлен на другом сайте.',
   online: 'На линии',
   offline: 'Не в сети',
   reconnecting: 'Переподключение…',

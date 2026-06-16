@@ -28,6 +28,7 @@ import {
   isIndexing,
   sourceBadge,
   UPLOAD_MIME,
+  formatDocErrorMessage,
   type WorkspaceTab,
 } from '@/components/knowledge/kb-utils';
 import { useDebouncedSave } from '@/components/knowledge/use-debounced-save';
@@ -388,7 +389,7 @@ export function KnowledgePage() {
                         {ru.knowledge.upload}
                         <input
                           type="file"
-                          accept=".txt,.md,.pdf,.docx,.csv,.xlsx,.html,.htm"
+                          accept=".txt,.md,.pdf,.docx,.csv,.xlsx,.html,.htm,.json"
                           className="hidden"
                           multiple
                           onChange={(e) => {
@@ -436,7 +437,8 @@ export function KnowledgePage() {
                             </div>
                             <div className="text-xs text-zinc-500">
                               {doc.chunkCount} chunks · {doc.tokenCount} tok
-                              {doc.errorMessage && ` · ${doc.errorMessage}`}
+                              {formatDocErrorMessage(doc.errorMessage) &&
+                                ` · ${formatDocErrorMessage(doc.errorMessage)}`}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
